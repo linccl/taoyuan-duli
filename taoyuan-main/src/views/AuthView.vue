@@ -121,11 +121,7 @@
   const linuxDoSubmitting = ref(false)
   const linuxDoStartPath = ref('')
   const currentUser = ref<null | CurrentUser>(null)
-  const authForm = ref({
-    username: '',
-    password: '',
-    displayName: ''
-  })
+  const authForm = ref({ username: '', password: '', displayName: '' })
   const showLinuxDoLogin = computed(() => !currentUser.value && !!linuxDoStartPath.value)
 
   const syncModeFromRoute = () => {
@@ -178,11 +174,7 @@
   }
 
   const resetAuthForm = () => {
-    authForm.value = {
-      username: '',
-      password: '',
-      displayName: ''
-    }
+    authForm.value = { username: '', password: '', displayName: '' }
   }
 
   const refreshAccountAfterLogin = async () => {
@@ -215,11 +207,7 @@
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username,
-          password,
-          display_name: displayName
-        })
+        body: JSON.stringify({ username, password, display_name: displayName })
       })
       const data = await res.json().catch(() => null)
       if (!res.ok || !data?.ok) {
