@@ -296,7 +296,7 @@ function normalizeOAuthIdentity(input = {}) {
     username_key: normalizeUsernameKey(input.username_key || input.username || ''),
     provider_username: String(input.provider_username || input.username || '').slice(0, 191),
     provider_login: String(input.provider_login || input.login || '').slice(0, 191),
-    provider_display_name: sanitizeDisplayName(input.provider_display_name || input.name || '', ''),
+    provider_display_name: String(input.provider_display_name || input.name || '').slice(0, 191),
     avatar_url: String(input.avatar_url || '').slice(0, 512),
     trust_level: input.trust_level === null || input.trust_level === undefined ? null : Number(input.trust_level) || 0,
     active: normalizeOAuthBoolean(input.active),
@@ -327,6 +327,12 @@ function assertOAuthProviderProfileAllowed(profile = {}) {
     error.code = 'provider_silenced';
     throw error;
   }
+}
+
+function createOAuthLoginError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
 }
 
 function buildMysqlPool() {
