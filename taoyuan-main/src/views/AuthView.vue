@@ -119,12 +119,7 @@
   const currentUser = ref<null | CurrentUser>(null)
   const authForm = ref({ username: '', password: '', displayName: '' })
   const showLinuxDoLogin = computed(() => !currentUser.value && !!linuxDoStartPath.value)
-  const authTips = [
-    '注册一个新账号后，下次可以直接用它登录。',
-    '登录成功后，会自动回到主菜单并同步当前账号。',
-    '想换成本地存档或账号存档，都可以回主菜单再切换。',
-    '如果只是想先看看，也可以随时返回主菜单。'
-  ]
+  const authTips = ['注册一个新账号后，下次可以直接用它登录。', '登录成功后，会自动回到主菜单并同步当前账号。', '想换成本地存档或账号存档，都可以回主菜单再切换。', '如果只是想先看看，也可以随时返回主菜单。']
 
   const syncModeFromRoute = () => {
     authMode.value = route.query.mode === 'register' ? 'register' : 'login'
@@ -237,7 +232,6 @@
   }
 
   const handleLinuxDoCallback = async () => {
-    const linuxdo = firstQueryValue(route.query.linuxdo)
     const linuxdoError = firstQueryValue(route.query.linuxdo_error)
     if (!hasLinuxDoCallbackQuery()) return
     const redirect = safeQueryPath(route.query.redirect)
@@ -305,23 +299,10 @@
 
   watch(() => route.query.mode, syncModeFromRoute)
 
-  watch(
-    () => [route.query.linuxdo, route.query.linuxdo_error],
-    () => { void handleLinuxDoCallback() }
-  )
+  watch(() => [route.query.linuxdo, route.query.linuxdo_error], () => { void handleLinuxDoCallback() })
 </script>
 
 <style scoped>
-  .auth-view {
-    max-width: 980px;
-    margin: 0 auto;
-  }
-
-  .logo {
-    width: 50px;
-    height: 50px;
-    background: url(@/assets/logo.png) center / contain no-repeat;
-    image-rendering: pixelated;
-    flex-shrink: 0;
-  }
+  .auth-view { max-width: 980px; margin: 0 auto; }
+  .logo { width: 50px; height: 50px; background: url(@/assets/logo.png) center / contain no-repeat; image-rendering: pixelated; flex-shrink: 0; }
 </style>
