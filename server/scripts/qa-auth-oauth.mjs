@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process'
 import { createServer } from 'node:http'
+import fs from 'node:fs'
 import { rm } from 'node:fs/promises'
 import net from 'node:net'
 import path from 'node:path'
@@ -11,6 +12,8 @@ const __dirname = path.dirname(__filename)
 const serverRoot = path.resolve(__dirname, '..')
 const tempDir = path.resolve(serverRoot, '.tmp-auth-oauth-run')
 const storageFile = path.resolve(tempDir, '.storage.json')
+const usersFile = path.resolve(tempDir, 'users.json')
+const oauthIdentitiesFile = path.resolve(tempDir, 'oauth_identities.json')
 const host = '127.0.0.1'
 const preferredAppPort = Number(process.env.TAOYUAN_AUTH_OAUTH_PORT || 4123)
 const preferredProviderPort = Number(process.env.TAOYUAN_AUTH_OAUTH_PROVIDER_PORT || 5123)
@@ -21,6 +24,7 @@ const codeRecords = new Map()
 const accessRecords = new Map()
 const clientId = 'mock_linux_do_client'
 const clientSecret = 'mock_linux_do_secret_do_not_log'
+const forcedIdentityFailureSub = 'atomic-failure-sub'
 const issuerPath = '/'
 const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
   modulusLength: 2048,
@@ -66,6 +70,23 @@ const signIdToken = payload => {
   const signature = crypto.sign('RSA-SHA256', Buffer.from(signingInput), privateKey).toString('base64url')
   return `${signingInput}.${signature}`
 }
+
+const oauthUsernameForSub = (sub, attempt = 0) => {
+  const seed = attempt > 0 ? `${sub}:${attempt}` : sub
+  return `ldo_${crypto.createHash('sha256').update(seed).digest('hex').slice(0, 16)}`
+}
+
+const readJsonFile = (filePath, fallback) => {
+  try {
+    if (!fs.existsSync(filePath)) return fallback
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'))
+  } catch {
+    return fallback
+  }
+}
+
+const readLocalUsers = () => readJsonFile(usersFile, { users: [] }).users || []
+const readLocalIdentities = () => readJsonFile(oauthIdentitiesFile, { identities: [] }).identities || []
 
 const readRequestBody = req =>
   new Promise(resolve => {
