@@ -261,6 +261,7 @@ morgan.token('safe-url', req => {
 });
 morgan.token('safe-referrer', req => {
   const ref = req.headers.referer || req.headers.referrer || '';
+  if (String(req.originalUrl || req.url || '').startsWith('/api/auth/linux-do/')) return ref ? '<redacted>' : '-';
   if (String(ref).includes('/api/auth/linux-do/callback')) return '<redacted>';
   return ref || '-';
 });
