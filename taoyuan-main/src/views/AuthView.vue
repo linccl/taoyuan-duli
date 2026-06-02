@@ -68,7 +68,6 @@
           <p class="game-section-title">使用说明</p>
           <p class="game-section-desc">先登录或注册账号，再回到主菜单开始你的旅程。</p>
         </div>
-
         <div class="game-panel-muted p-3 space-y-2 text-[11px] text-muted leading-5">
           <p v-for="(tip, index) in authTips" :key="tip">{{ index + 1 }}. {{ tip }}</p>
         </div>
@@ -133,6 +132,7 @@
 
   const firstQueryValue = (value: QueryValue): string => Array.isArray(value) ? value[0] || '' : value || ''
   const safeQueryPath = (value: QueryValue): string => resolveSafeSameSitePath(firstQueryValue(value))
+  const hasLinuxDoCallbackQuery = () => firstQueryValue(route.query.linuxdo) === 'success' || !!firstQueryValue(route.query.linuxdo_error)
 
   const isNativePlatform = (): boolean => {
     try {
@@ -151,10 +151,7 @@
       const res = await fetch('/api/me', { credentials: 'include' })
       const data = await res.json().catch(() => null)
       currentUser.value = res.ok && data?.ok && data?.user
-        ? {
-            username: data.user.username,
-            display_name: data.user.display_name
-          }
+        ? { username: data.user.username, display_name: data.user.display_name }
         : null
     } catch {
       currentUser.value = null
@@ -193,7 +190,6 @@
     const username = authForm.value.username.trim()
     const password = authForm.value.password
     const displayName = authForm.value.displayName.trim()
-
     if (!username) {
       showFloat('请填写用户名', 'danger')
       return
@@ -205,8 +201,7 @@
 
     authSubmitting.value = true
     try {
-      const endpoint = authMode.value === 'login' ? '/api/login' : '/api/register'
-      const res = await fetch(endpoint, {
+      const res = await fetch(authMode.value === 'login' ? '/api/login' : '/api/register', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -244,8 +239,7 @@
   const handleLinuxDoCallback = async () => {
     const linuxdo = firstQueryValue(route.query.linuxdo)
     const linuxdoError = firstQueryValue(route.query.linuxdo_error)
-    if (linuxdo !== 'success' && !linuxdoError) return
-
+    if (!hasLinuxDoCallbackQuery()) return
     const redirect = safeQueryPath(route.query.redirect)
     await clearLinuxDoCallbackQuery()
 
@@ -306,21 +300,14 @@
   onMounted(() => {
     syncModeFromRoute()
     void loadLinuxDoConfig()
-    void (firstQueryValue(route.query.linuxdo) || firstQueryValue(route.query.linuxdo_error) ? handleLinuxDoCallback() : loadCurrentUser())
+    void (hasLinuxDoCallbackQuery() ? handleLinuxDoCallback() : loadCurrentUser())
   })
 
-  watch(
-    () => route.query.mode,
-    () => {
-      syncModeFromRoute()
-    }
-  )
+  watch(() => route.query.mode, syncModeFromRoute)
 
   watch(
     () => [route.query.linuxdo, route.query.linuxdo_error],
-    () => {
-      void handleLinuxDoCallback()
-    }
+    () => { void handleLinuxDoCallback() }
   )
 </script>
 
