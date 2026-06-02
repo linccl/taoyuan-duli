@@ -13,6 +13,7 @@ const DATA_DIR = process.env.DB_STORAGE
 
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const OAUTH_IDENTITIES_FILE = path.join(DATA_DIR, 'oauth_identities.json');
+const OAUTH_PENDING_PREFIX = 'oauth_identity_pending_';
 const USER_META_FILE = path.join(DATA_DIR, 'user_admin_meta.json');
 const ADMIN_AUDIT_LOG_FILE = path.join(DATA_DIR, 'admin_audit_logs.json');
 const CONTENT_REVISION_LOG_FILE = path.join(DATA_DIR, 'admin_content_revisions.json');
@@ -26,6 +27,7 @@ const MYSQL_PORT = parseInt(process.env.MYSQL_PORT || '3306', 10);
 let mysqlPool = null;
 let mysqlReadyPromise = null;
 let lastMysqlFallbackLogAt = 0;
+const qaFailedOAuthIdentityWriteSubjects = new Set();
 
 function logMysqlFallback(scope, error) {
   const now = Date.now();
@@ -90,7 +92,38 @@ function loadOAuthIdentityStore() {
 }
 
 function saveOAuthIdentityStore(store) {
+  const failSubject = String(process.env.TAOYUAN_QA_FAIL_OAUTH_IDENTITY_WRITE_SUB || '').trim();
+  if (failSubject && !qaFailedOAuthIdentityWriteSubjects.has(failSubject)) {
+    const shouldFail = (store?.identities || []).some(item => String(item.provider_subject || '') === failSubject);
+    if (shouldFail) {
+      qaFailedOAuthIdentityWriteSubjects.add(failSubject);
+      throw new Error('QA forced oauth identity write failure');
+    }
+  }
   writeJsonFileAtomic(OAUTH_IDENTITIES_FILE, { identities: store?.identities || [] });
+}
+
+function getLocalOAuthPendingPath(provider, providerSubject) {
+  const key = sha256Hex(`${provider}:${providerSubject}`);
+  return path.join(DATA_DIR, `${OAUTH_PENDING_PREFIX}${key}.json`);
+}
+
+function listLocalOAuthPendingPaths() {
+  ensureDir();
+  return fs.readdirSync(DATA_DIR)
+    .filter(file => file.startsWith(OAUTH_PENDING_PREFIX) && file.endsWith('.json'))
+    .map(file => path.join(DATA_DIR, file));
+}
+
+function writeLocalOAuthPendingMarker(marker) {
+  writeJsonFileAtomic(getLocalOAuthPendingPath(marker.provider, marker.provider_subject), marker);
+}
+
+function clearLocalOAuthPendingMarker(provider, providerSubject) {
+  const filePath = getLocalOAuthPendingPath(provider, providerSubject);
+  try {
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } catch {}
 }
 
 function normalizeUsername(username) {
