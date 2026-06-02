@@ -3,6 +3,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const mysql = require('mysql2/promise');
 
@@ -11,6 +12,7 @@ const DATA_DIR = process.env.DB_STORAGE
   : path.join(__dirname, '../../data');
 
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
+const OAUTH_IDENTITIES_FILE = path.join(DATA_DIR, 'oauth_identities.json');
 const USER_META_FILE = path.join(DATA_DIR, 'user_admin_meta.json');
 const ADMIN_AUDIT_LOG_FILE = path.join(DATA_DIR, 'admin_audit_logs.json');
 const CONTENT_REVISION_LOG_FILE = path.join(DATA_DIR, 'admin_content_revisions.json');
@@ -300,6 +302,28 @@ async function ensureMysqlReady() {
           banned_at BIGINT NULL DEFAULT NULL,
           updated_at BIGINT NOT NULL,
           PRIMARY KEY (username_key)
+        ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+      `);
+
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS user_oauth_identities (
+          id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+          provider VARCHAR(32) NOT NULL,
+          provider_subject VARCHAR(191) NOT NULL,
+          username_key VARCHAR(191) NOT NULL,
+          provider_username VARCHAR(191) NOT NULL DEFAULT '',
+          provider_login VARCHAR(191) NOT NULL DEFAULT '',
+          provider_display_name VARCHAR(191) NOT NULL DEFAULT '',
+          avatar_url VARCHAR(512) NOT NULL DEFAULT '',
+          trust_level INT NULL DEFAULT NULL,
+          active TINYINT(1) NULL DEFAULT NULL,
+          silenced TINYINT(1) NULL DEFAULT NULL,
+          linked_at BIGINT NOT NULL,
+          updated_at BIGINT NOT NULL,
+          last_login_at BIGINT NOT NULL,
+          PRIMARY KEY (id),
+          UNIQUE KEY uniq_provider_subject (provider, provider_subject),
+          KEY idx_username_key (username_key)
         ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
       `);
 
