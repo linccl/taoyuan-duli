@@ -31,45 +31,20 @@
 
         <template v-else>
           <div class="flex items-center justify-center space-x-2">
-            <Button class="py-1 px-3 text-xs" :class="authMode === 'login' ? '!bg-accent !text-bg' : ''" @click="authMode = 'login'">
-              登录账号
-            </Button>
-            <Button class="py-1 px-3 text-xs" :class="authMode === 'register' ? '!bg-accent !text-bg' : ''" @click="authMode = 'register'">
-              注册账号
-            </Button>
+            <Button class="py-1 px-3 text-xs" :class="authMode === 'login' ? '!bg-accent !text-bg' : ''" @click="authMode = 'login'">登录账号</Button>
+            <Button class="py-1 px-3 text-xs" :class="authMode === 'register' ? '!bg-accent !text-bg' : ''" @click="authMode = 'register'">注册账号</Button>
           </div>
 
           <div class="game-panel-muted p-4 space-y-3">
             <div class="grid grid-cols-1 gap-3">
-              <input
-                v-model="authForm.username"
-                type="text"
-                maxlength="20"
-                placeholder="请输入用户名"
-                class="w-full px-3 py-2 bg-bg border border-accent/30 rounded-xs text-sm focus:border-accent outline-none"
-              />
-              <input
-                v-model="authForm.password"
-                type="password"
-                maxlength="50"
-                placeholder="密码（至少 6 位）"
-                class="w-full px-3 py-2 bg-bg border border-accent/30 rounded-xs text-sm focus:border-accent outline-none"
-              />
-              <input
-                v-if="authMode === 'register'"
-                v-model="authForm.displayName"
-                type="text"
-                maxlength="30"
-                placeholder="显示名称（可选）"
-                class="w-full px-3 py-2 bg-bg border border-accent/30 rounded-xs text-sm focus:border-accent outline-none"
-              />
+              <input v-model="authForm.username" type="text" maxlength="20" placeholder="请输入用户名" class="w-full px-3 py-2 bg-bg border border-accent/30 rounded-xs text-sm focus:border-accent outline-none" />
+              <input v-model="authForm.password" type="password" maxlength="50" placeholder="密码（至少 6 位）" class="w-full px-3 py-2 bg-bg border border-accent/30 rounded-xs text-sm focus:border-accent outline-none" />
+              <input v-if="authMode === 'register'" v-model="authForm.displayName" type="text" maxlength="30" placeholder="显示名称（可选）" class="w-full px-3 py-2 bg-bg border border-accent/30 rounded-xs text-sm focus:border-accent outline-none" />
             </div>
 
             <div class="rounded-xs border border-accent/10 bg-bg/15 px-3 py-2">
               <p class="text-[10px] text-accent">说明</p>
-              <p class="text-[11px] text-muted mt-1 leading-5">
-                {{ authMode === 'login' ? '如果你已经注册过，直接输入账号和密码即可。' : '注册完成后会自动登录，方便你马上开始游戏。' }}
-              </p>
+              <p class="text-[11px] text-muted mt-1 leading-5">{{ authMode === 'login' ? '如果你已经注册过，直接输入账号和密码即可。' : '注册完成后会自动登录，方便你马上开始游戏。' }}</p>
             </div>
 
             <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
