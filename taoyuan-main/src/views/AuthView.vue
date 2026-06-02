@@ -95,10 +95,13 @@
 
   const LINUX_DO_ERROR_MESSAGES: Record<string, string> = {
     cancelled: '已取消 Linux DO 登录', provider_cancelled: '已取消 Linux DO 登录',
-    token: 'Linux DO 授权信息校验失败，请重试', profile: '获取 Linux DO 用户资料失败，请重试', oauth_store: '保存 Linux DO 登录状态失败，请稍后重试',
+    token: 'Linux DO 授权信息校验失败，请重试', token_failed: 'Linux DO 授权信息校验失败，请重试', token_invalid: 'Linux DO 授权信息校验失败，请重试',
+    profile: '获取 Linux DO 用户资料失败，请重试', userinfo_failed: '获取 Linux DO 用户资料失败，请重试', subject_mismatch: 'Linux DO 账号信息不一致，请重新登录',
+    oauth_store: '保存 Linux DO 登录状态失败，请稍后重试',
     id_token_invalid: 'Linux DO 身份令牌校验失败，请重试',
-    profile_rejected: '当前 Linux DO 账号暂不可登录', account_blocked: '当前账号暂不可登录',
-    auto_create: '自动创建账号失败，请稍后重试', account_create: '自动创建账号失败，请稍后重试'
+    profile_rejected: '当前 Linux DO 账号暂不可登录', account_blocked: '当前账号暂不可登录', provider_inactive: '当前 Linux DO 账号暂不可登录', provider_silenced: '当前 Linux DO 账号暂不可登录',
+    local_banned: '当前账号暂不可登录', local_deleted: '当前账号暂不可登录',
+    auto_create: '自动创建账号失败，请稍后重试', account_create: '自动创建账号失败，请稍后重试', auto_create_disabled: '当前暂未开放 Linux DO 自动创建账号', username_conflict: '自动创建账号失败，请稍后重试'
   }
 
   const router = useRouter()
@@ -216,6 +219,7 @@
 
   const resolveLinuxDoErrorMessage = (code: string) => {
     if (code.startsWith('state_')) return '登录状态已过期，请重新发起 Linux DO 登录'
+    if (code.startsWith('id_token_')) return 'Linux DO 身份令牌校验失败，请重试'
     return LINUX_DO_ERROR_MESSAGES[code] || 'Linux DO 登录失败，请重试'
   }
 
