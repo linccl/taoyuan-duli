@@ -269,6 +269,7 @@ const startServer = () => {
       LINUX_DO_OAUTH_TOKEN_URL: `${providerBaseURL}/oauth2/token`,
       LINUX_DO_OAUTH_USERINFO_URL: `${providerBaseURL}/api/user`,
       LINUX_DO_OAUTH_JWKS_URL: `${providerBaseURL}/.well-known/jwks.json`,
+      TAOYUAN_QA_FAIL_OAUTH_IDENTITY_WRITE_SUB: forcedIdentityFailureSub,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
