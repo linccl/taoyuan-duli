@@ -378,6 +378,34 @@ try {
     assert(/^ldo_[a-f0-9]{16}$/.test(firstUsername), 'auto-created username format is invalid')
   })
 
+  await runCheck('JSON identity write failure rolls back without orphan or duplicate account', async () => {
+    const failed = await loginFlow(forcedIdentityFailureSub)
+    assert(failed.location.includes('linuxdo_error=oauth_failed'), `forced identity write failure should fail, got ${failed.location}`)
+    const expectedUsername = oauthUsernameForSub(forcedIdentityFailureSub)
+    let users = readLocalUsers().filter(user => user?.username === expectedUsername || user?.username_key === expectedUsername)
+    let identities = readLocalIdentities().filter(identity => identity?.provider_subject === forcedIdentityFailureSub)
+    assert(users.length === 0, 'identity write failure left an orphan ldo_* user')
+    assert(identities.length === 0, 'identity write failure unexpectedly persisted identity')
+
+    const recovered = await loginFlow(forcedIdentityFailureSub)
+    assert(recovered.location.includes('linuxdo=success'), `recovered login should succeed, got ${recovered.location}`)
+    const recoveredMe = await readJson(await request('/api/me', recovered.session))
+    assert(recoveredMe?.user?.username === expectedUsername, 'recovered OAuth login did not reuse deterministic username')
+    users = readLocalUsers().filter(user => user?.username === expectedUsername || user?.username_key === expectedUsername)
+    identities = readLocalIdentities().filter(identity => identity?.provider_subject === forcedIdentityFailureSub)
+    assert(users.length === 1, 'recovered login should create exactly one user')
+    assert(identities.length === 1 && identities[0].username_key === expectedUsername, 'recovered login should create exactly one matching identity')
+
+    const repeated = await loginFlow(forcedIdentityFailureSub)
+    assert(repeated.location.includes('linuxdo=success'), 'repeat recovered login should succeed')
+    const repeatedMe = await readJson(await request('/api/me', repeated.session))
+    assert(repeatedMe?.user?.username === expectedUsername, 'repeat recovered login did not reuse same account')
+    users = readLocalUsers().filter(user => user?.username === expectedUsername || user?.username_key === expectedUsername)
+    identities = readLocalIdentities().filter(identity => identity?.provider_subject === forcedIdentityFailureSub)
+    assert(users.length === 1, 'repeat recovered login created duplicate user')
+    assert(identities.length === 1, 'repeat recovered login created duplicate identity')
+  })
+
   await runCheck('duplicate callback is rejected after one-time state consumption', async () => {
     const session = {}
     const authUrl = await getStartRedirect(session)
