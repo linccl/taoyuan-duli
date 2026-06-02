@@ -116,9 +116,7 @@
   const showLinuxDoLogin = computed(() => !currentUser.value && !!linuxDoStartPath.value)
   const authTips = ['注册一个新账号后，下次可以直接用它登录。', '登录成功后，会自动回到主菜单并同步当前账号。', '想换成本地存档或账号存档，都可以回主菜单再切换。', '如果只是想先看看，也可以随时返回主菜单。']
 
-  const syncModeFromRoute = () => {
-    authMode.value = route.query.mode === 'register' ? 'register' : 'login'
-  }
+  const syncModeFromRoute = () => { authMode.value = route.query.mode === 'register' ? 'register' : 'login' }
 
   const firstQueryValue = (value: QueryValue): string => Array.isArray(value) ? value[0] || '' : value || ''
   const safeQueryPath = (value: QueryValue): string => resolveSafeSameSitePath(firstQueryValue(value))
