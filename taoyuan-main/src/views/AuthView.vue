@@ -91,7 +91,7 @@
   import { useSaveStore } from '@/stores/useSaveStore'
 
   type CurrentUser = { username: string; display_name?: string }
-  type QueryValue = string | string[] | null | undefined
+  type QueryValue = string | null | undefined | (string | null)[]
 
   const LINUX_DO_ERROR_MESSAGES: Record<string, string> = {
     cancelled: '已取消 Linux DO 登录', provider_cancelled: '已取消 Linux DO 登录',
