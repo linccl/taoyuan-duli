@@ -31,6 +31,8 @@ const currentWindowOrigin = getWindowOrigin()
 const nativeFetch = globalThis.fetch.bind(globalThis)
 let fetchBridgeInstalled = false
 
+const CONTROL_CHAR_PATTERN = /[\u0000-\u001F\u007F]/
+
 const isFirstPartyApiPath = (value: string): boolean => /^\/api(?:\/|\?|$)/.test(value)
 
 const isLocalWebViewOrigin = (origin: string): boolean => {
@@ -81,6 +83,26 @@ const withDefaultCredentials = (url: string, init?: RequestInit): RequestInit | 
 export const buildApiUrl = (path: string): string => resolveApiUrl(path)
 
 export const getConfiguredAndroidApiOrigin = (): string => configuredAndroidApiOrigin
+
+export const isSafeApiStartPath = (value: unknown): value is string =>
+  typeof value === 'string'
+  && value.startsWith('/api/')
+  && !value.includes('//')
+  && !value.includes('?')
+  && !value.includes('#')
+  && !CONTROL_CHAR_PATTERN.test(value)
+
+export const resolveSafeSameSitePath = (value: string): string => {
+  const raw = value.trim()
+  if (!raw || !raw.startsWith('/') || raw.startsWith('//') || CONTROL_CHAR_PATTERN.test(raw)) return '/'
+  try {
+    const parsed = new URL(raw, 'https://taoyuan.local')
+    if (parsed.origin !== 'https://taoyuan.local') return '/'
+    return `${parsed.pathname}${parsed.search}${parsed.hash}` || '/'
+  } catch {
+    return '/'
+  }
+}
 
 export const apiFetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   if (typeof input === 'string' || input instanceof URL) {
