@@ -1783,6 +1783,8 @@ module.exports = {
   recordGameplayEventLog,
   listGameplayEventLogs,
   getUserAccessState,
+  findOAuthIdentity,
+  loginWithOAuthIdentity,
   EXCHANGE_RATE,
   MYSQL_ENABLED,
   ensureMysqlReady,
