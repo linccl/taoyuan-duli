@@ -155,7 +155,7 @@
       const res = await fetch('/api/public-config', { credentials: 'include' })
       const data = await res.json().catch(() => null) as unknown
       if (!res.ok || !data || typeof data !== 'object' || Array.isArray(data)) return
-      const config = data as Record<string, unknown>
+      const config = data as Record<string, unknown>; if (config.ok !== true) return
       const startPath = config.linux_do_oauth_start_path
       linuxDoStartPath.value = config.linux_do_oauth_enabled === true && isSafeApiStartPath(startPath) ? startPath : ''
     } catch {
