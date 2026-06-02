@@ -12,6 +12,7 @@ const taoyuanHall = require('../taoyuanHall');
 const taoyuanMailbox = require('../taoyuanMailbox');
 const taoyuanAiAssistant = require('../taoyuanAiAssistant');
 const officialControlPlatform = require('../officialControlPlatform');
+const linuxDoOAuth = require('../linuxDoOAuth');
 const {
   ensureTaoyuanSavesDir,
   getTaoyuanSavePath,
@@ -529,6 +530,7 @@ function getPublicConfigPayload(req) {
     : { import_money: 0, export_money: 0 };
   return {
     ok: true,
+    ...linuxDoOAuth.publicConfig(),
     exchange_rate: c.exchange_rate,
     taoyuan_exchange_rate_quota_per_money: c.taoyuan_exchange_rate_quota_per_money,
     taoyuan_exchange_rate_dollar_per_money: getTaoyuanDollarPerMoney(),
@@ -571,6 +573,61 @@ router.post('/login', async (req, res, next) => {
     res.json({ ok: true, msg: '登录成功', user: result.user, csrf_token: req.session.csrf_token });
   } catch (error) {
     next(error);
+  }
+});
+
+router.get('/auth/linux-do/start', (req, res) => {
+  try {
+    const oauthConfig = linuxDoOAuth.readConfig();
+    if (!oauthConfig.enabled) {
+      return res.redirect(linuxDoOAuth.authRedirect('oauth_disabled'));
+    }
+    const context = linuxDoOAuth.createStartContext(req, req.query.return_to);
+    res.redirect(linuxDoOAuth.buildAuthorizeUrl(oauthConfig, context));
+  } catch (error) {
+    res.redirect(linuxDoOAuth.authRedirect(linuxDoOAuth.mapErrorCode(error)));
+  }
+});
+
+router.get('/auth/linux-do/callback', async (req, res) => {
+  let startContext = null;
+  try {
+    const oauthConfig = linuxDoOAuth.readConfig();
+    if (!oauthConfig.enabled) {
+      return res.redirect(linuxDoOAuth.authRedirect('oauth_disabled'));
+    }
+    if (req.query.error) {
+      return res.redirect(linuxDoOAuth.authRedirect('provider_error'));
+    }
+    const code = String(req.query.code || '').trim();
+    const state = String(req.query.state || '').trim();
+    if (!code || !state) {
+      return res.redirect(linuxDoOAuth.authRedirect('missing_code_state'));
+    }
+    startContext = linuxDoOAuth.consumeStartContext(req, state);
+    if (!startContext) {
+      return res.redirect(linuxDoOAuth.authRedirect('state_invalid'));
+    }
+
+    const token = await linuxDoOAuth.requestToken(oauthConfig, code, startContext.code_verifier);
+    const idClaims = await linuxDoOAuth.verifyIdToken(oauthConfig, token.id_token, startContext.nonce);
+    const userinfo = await linuxDoOAuth.requestUserinfo(oauthConfig, token.access_token);
+    if (String(userinfo.sub || '') !== String(idClaims.sub || '')) {
+      return res.redirect(linuxDoOAuth.authRedirect('subject_mismatch'));
+    }
+
+    const profile = linuxDoOAuth.normalizeProviderProfile(userinfo);
+    const result = await db.loginWithOAuthIdentity(linuxDoOAuth.PROVIDER, idClaims.sub, profile, {
+      autoCreate: oauthConfig.autoCreateEnabled,
+    });
+    await establishUserSession(req, result.user);
+    res.redirect(linuxDoOAuth.authRedirect('', startContext.return_to));
+  } catch (error) {
+    const code = linuxDoOAuth.mapErrorCode(error);
+    if (!['state_invalid', 'missing_code_state', 'provider_error'].includes(code)) {
+      console.warn(`[oauth:linux-do] callback failed: ${code}`);
+    }
+    res.redirect(linuxDoOAuth.authRedirect(code, startContext?.return_to));
   }
 });
 
