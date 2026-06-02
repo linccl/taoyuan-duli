@@ -1307,6 +1307,7 @@ async function withLocalOAuthCreateLock(fn) {
 
 async function createLocalOAuthUser(provider, providerSubject, profile = {}) {
   return withLocalOAuthCreateLock(async () => {
+    recoverLocalOAuthPendingCreates();
     const existing = await findOAuthIdentity(provider, providerSubject);
     if (existing) return loginWithOAuthIdentity(provider, providerSubject, profile, { autoCreate: false });
 
@@ -1356,11 +1357,26 @@ async function createLocalOAuthUser(provider, providerSubject, profile = {}) {
       last_login_at: now,
     });
 
-    userStore.users.push(nextUser);
-    userStore.users.sort((a, b) => a.username.localeCompare(b.username, 'zh-CN'));
-    identityStore.identities.push(identity);
-    saveStore(userStore);
-    saveOAuthIdentityStore(identityStore);
+    const marker = {
+      provider,
+      provider_subject: providerSubject,
+      username_key: usernameKey,
+      created_at: now,
+    };
+    writeLocalOAuthPendingMarker(marker);
+
+    try {
+      userStore.users.push(nextUser);
+      userStore.users.sort((a, b) => a.username.localeCompare(b.username, 'zh-CN'));
+      identityStore.identities.push(identity);
+      saveStore(userStore);
+      saveOAuthIdentityStore(identityStore);
+      clearLocalOAuthPendingMarker(provider, providerSubject);
+    } catch (error) {
+      rollbackLocalOAuthUser(usernameKey);
+      clearLocalOAuthPendingMarker(provider, providerSubject);
+      throw error;
+    }
 
     return {
       ok: true,
@@ -1373,6 +1389,50 @@ async function createLocalOAuthUser(provider, providerSubject, profile = {}) {
       },
     };
   });
+}
+
+function recoverLocalOAuthPendingCreates() {
+  for (const filePath of listLocalOAuthPendingPaths()) {
+    let marker = null;
+    try {
+      marker = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    } catch {
+      try {
+        fs.unlinkSync(filePath);
+      } catch {}
+      continue;
+    }
+
+    const provider = String(marker?.provider || '').trim();
+    const providerSubject = String(marker?.provider_subject || '').trim();
+    const usernameKey = normalizeUsernameKey(marker?.username_key || '');
+    if (!provider || !providerSubject || !usernameKey) {
+      try {
+        fs.unlinkSync(filePath);
+      } catch {}
+      continue;
+    }
+
+    const identityStore = loadOAuthIdentityStore();
+    const hasIdentity = identityStore.identities.some(identity =>
+      String(identity.provider || '') === provider
+      && String(identity.provider_subject || '') === providerSubject
+      && normalizeUsernameKey(identity.username_key) === usernameKey
+    );
+    if (!hasIdentity) rollbackLocalOAuthUser(usernameKey);
+    try {
+      fs.unlinkSync(filePath);
+    } catch {}
+  }
+}
+
+function rollbackLocalOAuthUser(usernameKey) {
+  const normalizedKey = normalizeUsernameKey(usernameKey);
+  if (!normalizedKey) return;
+  const store = loadStore();
+  const nextUsers = store.users.filter(item => (item.username_key || normalizeUsernameKey(item.username)) !== normalizedKey);
+  if (nextUsers.length === store.users.length) return;
+  saveStore({ ...store, users: nextUsers });
 }
 
 async function recordAdminAuditLog(entry = {}) {
