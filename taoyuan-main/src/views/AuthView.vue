@@ -291,12 +291,9 @@
     void loadLinuxDoConfig()
     void (hasLinuxDoCallbackQuery() ? handleLinuxDoCallback() : loadCurrentUser())
   })
-
   watch(() => route.query.mode, syncModeFromRoute)
-
   watch(() => [route.query.linuxdo, route.query.linuxdo_error], () => { void handleLinuxDoCallback() })
 </script>
-
 <style scoped>
   .auth-view { max-width: 980px; margin: 0 auto; }
   .logo { width: 50px; height: 50px; background: url(@/assets/logo.png) center / contain no-repeat; image-rendering: pixelated; flex-shrink: 0; }
