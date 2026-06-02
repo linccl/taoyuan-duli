@@ -114,7 +114,7 @@
   import _pkg from '../../package.json'
   import { useAudio } from '@/composables/useAudio'
   import { showFloat } from '@/composables/useGameLog'
-  import { buildApiUrl } from '@/utils/apiClient'
+  import { buildApiUrl, isSafeApiStartPath, resolveSafeSameSitePath } from '@/utils/apiClient'
   import { initCurrentAccount } from '@/utils/accountStorage'
   import { clearStoredAdminToken } from '@/utils/taoyuanMailboxAdminApi'
   import { useSaveStore } from '@/stores/useSaveStore'
@@ -122,7 +122,6 @@
   type CurrentUser = { username: string; display_name?: string }
   type QueryValue = string | string[] | null | undefined
 
-  const CONTROL_CHAR_PATTERN = /[\u0000-\u001F\u007F]/
   const LINUX_DO_ERROR_MESSAGES: Record<string, string> = {
     cancelled: '已取消 Linux DO 登录',
     provider_cancelled: '已取消 Linux DO 登录',
@@ -159,6 +158,7 @@
   }
 
   const firstQueryValue = (value: QueryValue): string => Array.isArray(value) ? value[0] || '' : value || ''
+  const safeQueryPath = (value: QueryValue): string => resolveSafeSameSitePath(firstQueryValue(value))
 
   const isNativePlatform = (): boolean => {
     try {
@@ -168,28 +168,8 @@
     }
   }
 
-  const isSafeStartPath = (value: unknown): value is string =>
-    typeof value === 'string'
-    && value.startsWith('/api/')
-    && !value.includes('//')
-    && !value.includes('?')
-    && !value.includes('#')
-    && !CONTROL_CHAR_PATTERN.test(value)
-
-  const resolveSafeRedirect = (value: QueryValue): string => {
-    const raw = firstQueryValue(value).trim()
-    if (!raw || !raw.startsWith('/') || raw.startsWith('//') || CONTROL_CHAR_PATTERN.test(raw)) return '/'
-    try {
-      const parsed = new URL(raw, 'https://taoyuan.local')
-      if (parsed.origin !== 'https://taoyuan.local') return '/'
-      return `${parsed.pathname}${parsed.search}${parsed.hash}` || '/'
-    } catch {
-      return '/'
-    }
-  }
-
   const goBack = () => {
-    void router.push(resolveSafeRedirect(route.query.redirect))
+    void router.push(safeQueryPath(route.query.redirect))
   }
 
   const loadCurrentUser = async () => {
@@ -216,7 +196,7 @@
       if (!res.ok || !data || typeof data !== 'object' || Array.isArray(data)) return
       const config = data as Record<string, unknown>
       const startPath = config.linux_do_oauth_start_path
-      linuxDoStartPath.value = config.linux_do_oauth_enabled === true && isSafeStartPath(startPath) ? startPath : ''
+      linuxDoStartPath.value = config.linux_do_oauth_enabled === true && isSafeApiStartPath(startPath) ? startPath : ''
     } catch {
       linuxDoStartPath.value = ''
     }
@@ -300,7 +280,7 @@
     const linuxdoError = firstQueryValue(route.query.linuxdo_error)
     if (linuxdo !== 'success' && !linuxdoError) return
 
-    const redirect = resolveSafeRedirect(route.query.redirect)
+    const redirect = safeQueryPath(route.query.redirect)
     await clearLinuxDoCallbackQuery()
 
     if (linuxdoError) {
@@ -323,7 +303,7 @@
 
   const handleLinuxDoLogin = () => {
     if (!linuxDoStartPath.value || isNativePlatform()) return
-    const returnTo = resolveSafeRedirect(route.query.redirect)
+    const returnTo = safeQueryPath(route.query.redirect)
     const startUrl = buildApiUrl(`${linuxDoStartPath.value}?return_to=${encodeURIComponent(returnTo)}`)
     linuxDoSubmitting.value = true
     try {
