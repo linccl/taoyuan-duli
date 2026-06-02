@@ -94,16 +94,11 @@
   type QueryValue = string | string[] | null | undefined
 
   const LINUX_DO_ERROR_MESSAGES: Record<string, string> = {
-    cancelled: '已取消 Linux DO 登录',
-    provider_cancelled: '已取消 Linux DO 登录',
-    token: 'Linux DO 授权信息校验失败，请重试',
-    profile: '获取 Linux DO 用户资料失败，请重试',
-    oauth_store: '保存 Linux DO 登录状态失败，请稍后重试',
+    cancelled: '已取消 Linux DO 登录', provider_cancelled: '已取消 Linux DO 登录',
+    token: 'Linux DO 授权信息校验失败，请重试', profile: '获取 Linux DO 用户资料失败，请重试', oauth_store: '保存 Linux DO 登录状态失败，请稍后重试',
     id_token_invalid: 'Linux DO 身份令牌校验失败，请重试',
-    profile_rejected: '当前 Linux DO 账号暂不可登录',
-    account_blocked: '当前账号暂不可登录',
-    auto_create: '自动创建账号失败，请稍后重试',
-    account_create: '自动创建账号失败，请稍后重试'
+    profile_rejected: '当前 Linux DO 账号暂不可登录', account_blocked: '当前账号暂不可登录',
+    auto_create: '自动创建账号失败，请稍后重试', account_create: '自动创建账号失败，请稍后重试'
   }
 
   const router = useRouter()
