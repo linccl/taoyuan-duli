@@ -78,6 +78,12 @@
                 {{ authSubmitting ? '提交中...' : authMode === 'login' ? '登录' : '注册并登录' }}
               </Button>
             </div>
+
+            <div v-if="showLinuxDoLogin" class="border-t border-accent/10 pt-3">
+              <Button class="w-full justify-center" :icon="LogIn" :disabled="linuxDoSubmitting || authSubmitting" @click="handleLinuxDoLogin">
+                {{ linuxDoSubmitting ? '正在前往 Linux DO...' : '使用 Linux DO 登录' }}
+              </Button>
+            </div>
           </div>
         </template>
       </section>
@@ -100,16 +106,35 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, watch } from 'vue'
+  import { computed, ref, onMounted, watch } from 'vue'
   import { useRouter, useRoute } from 'vue-router'
+  import { Capacitor } from '@capacitor/core'
   import { ArrowLeft, LogIn, LogOut, UserPlus } from 'lucide-vue-next'
   import Button from '@/components/game/Button.vue'
   import _pkg from '../../package.json'
   import { useAudio } from '@/composables/useAudio'
   import { showFloat } from '@/composables/useGameLog'
+  import { buildApiUrl } from '@/utils/apiClient'
   import { initCurrentAccount } from '@/utils/accountStorage'
   import { clearStoredAdminToken } from '@/utils/taoyuanMailboxAdminApi'
   import { useSaveStore } from '@/stores/useSaveStore'
+
+  type CurrentUser = { username: string; display_name?: string }
+  type QueryValue = string | string[] | null | undefined
+
+  const CONTROL_CHAR_PATTERN = /[\u0000-\u001F\u007F]/
+  const LINUX_DO_ERROR_MESSAGES: Record<string, string> = {
+    cancelled: '已取消 Linux DO 登录',
+    provider_cancelled: '已取消 Linux DO 登录',
+    token: 'Linux DO 授权信息校验失败，请重试',
+    profile: '获取 Linux DO 用户资料失败，请重试',
+    oauth_store: '保存 Linux DO 登录状态失败，请稍后重试',
+    id_token_invalid: 'Linux DO 身份令牌校验失败，请重试',
+    profile_rejected: '当前 Linux DO 账号暂不可登录',
+    account_blocked: '当前账号暂不可登录',
+    auto_create: '自动创建账号失败，请稍后重试',
+    account_create: '自动创建账号失败，请稍后重试'
+  }
 
   const router = useRouter()
   const route = useRoute()
@@ -119,20 +144,52 @@
 
   const authMode = ref<'login' | 'register'>('login')
   const authSubmitting = ref(false)
-  const currentUser = ref<null | { username: string; display_name?: string }>(null)
+  const linuxDoSubmitting = ref(false)
+  const linuxDoStartPath = ref('')
+  const currentUser = ref<null | CurrentUser>(null)
   const authForm = ref({
     username: '',
     password: '',
     displayName: ''
   })
+  const showLinuxDoLogin = computed(() => !currentUser.value && !!linuxDoStartPath.value)
 
   const syncModeFromRoute = () => {
     authMode.value = route.query.mode === 'register' ? 'register' : 'login'
   }
 
+  const firstQueryValue = (value: QueryValue): string => Array.isArray(value) ? value[0] || '' : value || ''
+
+  const isNativePlatform = (): boolean => {
+    try {
+      return Capacitor.isNativePlatform()
+    } catch {
+      return true
+    }
+  }
+
+  const isSafeStartPath = (value: unknown): value is string =>
+    typeof value === 'string'
+    && value.startsWith('/api/')
+    && !value.includes('//')
+    && !value.includes('?')
+    && !value.includes('#')
+    && !CONTROL_CHAR_PATTERN.test(value)
+
+  const resolveSafeRedirect = (value: QueryValue): string => {
+    const raw = firstQueryValue(value).trim()
+    if (!raw || !raw.startsWith('/') || raw.startsWith('//') || CONTROL_CHAR_PATTERN.test(raw)) return '/'
+    try {
+      const parsed = new URL(raw, 'https://taoyuan.local')
+      if (parsed.origin !== 'https://taoyuan.local') return '/'
+      return `${parsed.pathname}${parsed.search}${parsed.hash}` || '/'
+    } catch {
+      return '/'
+    }
+  }
+
   const goBack = () => {
-    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
-    void router.push(redirect)
+    void router.push(resolveSafeRedirect(route.query.redirect))
   }
 
   const loadCurrentUser = async () => {
@@ -150,12 +207,36 @@
     }
   }
 
+  const loadLinuxDoConfig = async () => {
+    linuxDoStartPath.value = ''
+    if (isNativePlatform()) return
+    try {
+      const res = await fetch('/api/public-config', { credentials: 'include' })
+      const data = await res.json().catch(() => null) as unknown
+      if (!res.ok || !data || typeof data !== 'object' || Array.isArray(data)) return
+      const config = data as Record<string, unknown>
+      const startPath = config.linux_do_oauth_start_path
+      linuxDoStartPath.value = config.linux_do_oauth_enabled === true && isSafeStartPath(startPath) ? startPath : ''
+    } catch {
+      linuxDoStartPath.value = ''
+    }
+  }
+
   const resetAuthForm = () => {
     authForm.value = {
       username: '',
       password: '',
       displayName: ''
     }
+  }
+
+  const refreshAccountAfterLogin = async () => {
+    await initCurrentAccount()
+    saveStore.reloadAccountScopedState()
+    if (saveStore.storageMode === 'server') {
+      await saveStore.syncPendingServerSaves()
+    }
+    await loadCurrentUser()
   }
 
   const handleAuthSubmit = async () => {
@@ -191,12 +272,7 @@
         return
       }
 
-      await initCurrentAccount()
-      saveStore.reloadAccountScopedState()
-      if (saveStore.storageMode === 'server') {
-        await saveStore.syncPendingServerSaves()
-      }
-      await loadCurrentUser()
+      await refreshAccountAfterLogin()
       resetAuthForm()
       showFloat(authMode.value === 'login' ? '登录成功' : '注册成功，已自动登录', 'success')
       goBack()
@@ -204,6 +280,57 @@
       showFloat(authMode.value === 'login' ? '登录失败' : '注册失败', 'danger')
     } finally {
       authSubmitting.value = false
+    }
+  }
+
+  const resolveLinuxDoErrorMessage = (code: string) => {
+    if (code.startsWith('state_')) return '登录状态已过期，请重新发起 Linux DO 登录'
+    return LINUX_DO_ERROR_MESSAGES[code] || 'Linux DO 登录失败，请重试'
+  }
+
+  const clearLinuxDoCallbackQuery = async () => {
+    const query = { ...route.query }
+    delete query.linuxdo
+    delete query.linuxdo_error
+    await router.replace({ name: 'auth', query })
+  }
+
+  const handleLinuxDoCallback = async () => {
+    const linuxdo = firstQueryValue(route.query.linuxdo)
+    const linuxdoError = firstQueryValue(route.query.linuxdo_error)
+    if (linuxdo !== 'success' && !linuxdoError) return
+
+    const redirect = resolveSafeRedirect(route.query.redirect)
+    await clearLinuxDoCallbackQuery()
+
+    if (linuxdoError) {
+      showFloat(resolveLinuxDoErrorMessage(linuxdoError), 'danger')
+      return
+    }
+
+    try {
+      await refreshAccountAfterLogin()
+      if (!currentUser.value) {
+        showFloat('Linux DO 登录状态刷新失败，请重试', 'danger')
+        return
+      }
+      showFloat('Linux DO 登录成功', 'success')
+      void router.push(redirect)
+    } catch {
+      showFloat('Linux DO 登录状态刷新失败，请重试', 'danger')
+    }
+  }
+
+  const handleLinuxDoLogin = () => {
+    if (!linuxDoStartPath.value || isNativePlatform()) return
+    const returnTo = resolveSafeRedirect(route.query.redirect)
+    const startUrl = buildApiUrl(`${linuxDoStartPath.value}?return_to=${encodeURIComponent(returnTo)}`)
+    linuxDoSubmitting.value = true
+    try {
+      window.location.assign(startUrl)
+    } catch {
+      linuxDoSubmitting.value = false
+      showFloat('无法前往 Linux DO 登录，请稍后重试', 'danger')
     }
   }
 
@@ -232,13 +359,21 @@
 
   onMounted(() => {
     syncModeFromRoute()
-    void loadCurrentUser()
+    void loadLinuxDoConfig()
+    void (firstQueryValue(route.query.linuxdo) || firstQueryValue(route.query.linuxdo_error) ? handleLinuxDoCallback() : loadCurrentUser())
   })
 
   watch(
     () => route.query.mode,
     () => {
       syncModeFromRoute()
+    }
+  )
+
+  watch(
+    () => [route.query.linuxdo, route.query.linuxdo_error],
+    () => {
+      void handleLinuxDoCallback()
     }
   )
 </script>
