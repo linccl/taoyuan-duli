@@ -31,9 +31,15 @@ const currentWindowOrigin = getWindowOrigin()
 const nativeFetch = globalThis.fetch.bind(globalThis)
 let fetchBridgeInstalled = false
 
-const CONTROL_CHAR_PATTERN = /[\u0000-\u001F\u007F]/
-
 const isFirstPartyApiPath = (value: string): boolean => /^\/api(?:\/|\?|$)/.test(value)
+
+const hasControlChar = (value: string): boolean => {
+  for (const char of value) {
+    const code = char.charCodeAt(0)
+    if (code <= 31 || code === 127) return true
+  }
+  return false
+}
 
 const isLocalWebViewOrigin = (origin: string): boolean => {
   if (!origin) return false
@@ -90,11 +96,11 @@ export const isSafeApiStartPath = (value: unknown): value is string =>
   && !value.includes('//')
   && !value.includes('?')
   && !value.includes('#')
-  && !CONTROL_CHAR_PATTERN.test(value)
+  && !hasControlChar(value)
 
 export const resolveSafeSameSitePath = (value: string): string => {
   const raw = value.trim()
-  if (!raw || !raw.startsWith('/') || raw.startsWith('//') || CONTROL_CHAR_PATTERN.test(raw)) return '/'
+  if (!raw || !raw.startsWith('/') || raw.startsWith('//') || hasControlChar(raw)) return '/'
   try {
     const parsed = new URL(raw, 'https://taoyuan.local')
     if (parsed.origin !== 'https://taoyuan.local') return '/'
