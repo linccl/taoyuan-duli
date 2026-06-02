@@ -70,10 +70,7 @@
         </div>
 
         <div class="game-panel-muted p-3 space-y-2 text-[11px] text-muted leading-5">
-          <p>1. 注册一个新账号后，下次可以直接用它登录。</p>
-          <p>2. 登录成功后，会自动回到主菜单并同步当前账号。</p>
-          <p>3. 想换成本地存档或账号存档，都可以回主菜单再切换。</p>
-          <p>4. 如果只是想先看看，也可以随时返回主菜单。</p>
+          <p v-for="(tip, index) in authTips" :key="tip">{{ index + 1 }}. {{ tip }}</p>
         </div>
       </section>
     </div>
@@ -123,6 +120,12 @@
   const currentUser = ref<null | CurrentUser>(null)
   const authForm = ref({ username: '', password: '', displayName: '' })
   const showLinuxDoLogin = computed(() => !currentUser.value && !!linuxDoStartPath.value)
+  const authTips = [
+    '注册一个新账号后，下次可以直接用它登录。',
+    '登录成功后，会自动回到主菜单并同步当前账号。',
+    '想换成本地存档或账号存档，都可以回主菜单再切换。',
+    '如果只是想先看看，也可以随时返回主菜单。'
+  ]
 
   const syncModeFromRoute = () => {
     authMode.value = route.query.mode === 'register' ? 'register' : 'login'
