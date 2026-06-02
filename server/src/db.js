@@ -82,6 +82,17 @@ function saveStore(store) {
   writeJsonFileAtomic(USERS_FILE, store);
 }
 
+function loadOAuthIdentityStore() {
+  const raw = readJsonStoreStrict(OAUTH_IDENTITIES_FILE);
+  if (raw === null) return { identities: [] };
+  if (!Array.isArray(raw?.identities)) throw createStoreCorruptionError(OAUTH_IDENTITIES_FILE);
+  return raw;
+}
+
+function saveOAuthIdentityStore(store) {
+  writeJsonFileAtomic(OAUTH_IDENTITIES_FILE, { identities: store?.identities || [] });
+}
+
 function normalizeUsername(username) {
   return String(username || '').normalize('NFKC').trim();
 }
@@ -107,6 +118,10 @@ function sanitizeDisplayName(displayName, username) {
   const normalized = normalizeUsername(displayName || fallback);
   const sliced = Array.from(normalized).slice(0, 30).join('');
   return sliced || fallback;
+}
+
+function sha256Hex(value) {
+  return crypto.createHash('sha256').update(String(value || '')).digest('hex');
 }
 
 function nowSeconds() {
@@ -254,6 +269,64 @@ function localUserToPublic(user) {
     quota,
     dollars: parseFloat((quota / EXCHANGE_RATE).toFixed(4)),
   };
+}
+
+function adminUserToPublic(user) {
+  if (!user || user.deleted_at || user.status !== 'active') return null;
+  const quota = Number(user.quota) || 0;
+  return {
+    username: user.username,
+    display_name: user.display_name || user.username,
+    quota,
+    dollars: parseFloat((quota / EXCHANGE_RATE).toFixed(4)),
+  };
+}
+
+function normalizeOAuthBoolean(value) {
+  if (value === null || value === undefined) return null;
+  if (value === true || value === 1 || value === '1') return true;
+  if (value === false || value === 0 || value === '0') return false;
+  return null;
+}
+
+function normalizeOAuthIdentity(input = {}) {
+  return {
+    provider: String(input.provider || 'linux_do').trim(),
+    provider_subject: String(input.provider_subject || input.sub || '').trim(),
+    username_key: normalizeUsernameKey(input.username_key || input.username || ''),
+    provider_username: String(input.provider_username || input.username || '').slice(0, 191),
+    provider_login: String(input.provider_login || input.login || '').slice(0, 191),
+    provider_display_name: sanitizeDisplayName(input.provider_display_name || input.name || '', ''),
+    avatar_url: String(input.avatar_url || '').slice(0, 512),
+    trust_level: input.trust_level === null || input.trust_level === undefined ? null : Number(input.trust_level) || 0,
+    active: normalizeOAuthBoolean(input.active),
+    silenced: normalizeOAuthBoolean(input.silenced),
+    linked_at: Number(input.linked_at) || nowSeconds(),
+    updated_at: Number(input.updated_at) || nowSeconds(),
+    last_login_at: Number(input.last_login_at) || nowSeconds(),
+  };
+}
+
+function buildOAuthUsername(providerSubject, attempt = 0) {
+  const seed = attempt > 0 ? `${providerSubject}:${attempt}` : providerSubject;
+  return `ldo_${sha256Hex(seed).slice(0, 16)}`;
+}
+
+function buildOAuthPasswordHashInput() {
+  return `oauth:${crypto.randomBytes(48).toString('base64url')}`;
+}
+
+function assertOAuthProviderProfileAllowed(profile = {}) {
+  if (profile.active === false) {
+    const error = new Error('Linux DO 账号不可用');
+    error.code = 'provider_inactive';
+    throw error;
+  }
+  if (profile.silenced === true) {
+    const error = new Error('Linux DO 账号受限');
+    error.code = 'provider_silenced';
+    throw error;
+  }
 }
 
 function buildMysqlPool() {
