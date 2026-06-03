@@ -22,6 +22,7 @@ const session = require('express-session');
 const db = require('./db');
 const taoyuanHall = require('./taoyuanHall');
 const officialManagedConfig = require('./officialManagedConfig');
+const linuxDoOAuth = require('./linuxDoOAuth');
 
 const DATA_DIR = path.dirname(process.env.DB_STORAGE);
 const DEFAULTS_DIR = path.join(__dirname, '../../data-defaults');
@@ -153,6 +154,8 @@ function validateCriticalEnv() {
       throw new Error('OFFICIAL_CONTROL_PRIVATE_KEY 不能为空');
     }
   }
+
+  linuxDoOAuth.validateConfig();
 }
 
 function loadSessionStoreSnapshot(filePath) {
@@ -250,7 +253,19 @@ app.use(cors({
   },
   credentials: true,
 }));
-app.use(morgan('combined'));
+morgan.token('safe-url', req => {
+  if (String(req.originalUrl || req.url || '').startsWith('/api/auth/linux-do/callback')) {
+    return '/api/auth/linux-do/callback?<redacted>';
+  }
+  return req.originalUrl || req.url;
+});
+morgan.token('safe-referrer', req => {
+  const ref = req.headers.referer || req.headers.referrer || '';
+  if (String(req.originalUrl || req.url || '').startsWith('/api/auth/linux-do/')) return ref ? '<redacted>' : '-';
+  if (String(ref).includes('/api/auth/linux-do/callback')) return '<redacted>';
+  return ref || '-';
+});
+app.use(morgan(':remote-addr - :remote-user [:date[clf]] ":method :safe-url HTTP/:http-version" :status :res[content-length] ":safe-referrer" ":user-agent"'));
 app.use(express.json({ limit: '12mb' }));
 app.use(express.urlencoded({ extended: true, limit: '12mb' }));
 app.use('/taoyuan/hall/uploads', express.static(taoyuanHall.HALL_UPLOADS_DIR, {

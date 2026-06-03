@@ -3,6 +3,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const mysql = require('mysql2/promise');
 
@@ -11,6 +12,8 @@ const DATA_DIR = process.env.DB_STORAGE
   : path.join(__dirname, '../../data');
 
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
+const OAUTH_IDENTITIES_FILE = path.join(DATA_DIR, 'oauth_identities.json');
+const OAUTH_PENDING_PREFIX = 'oauth_identity_pending_';
 const USER_META_FILE = path.join(DATA_DIR, 'user_admin_meta.json');
 const ADMIN_AUDIT_LOG_FILE = path.join(DATA_DIR, 'admin_audit_logs.json');
 const CONTENT_REVISION_LOG_FILE = path.join(DATA_DIR, 'admin_content_revisions.json');
@@ -24,6 +27,7 @@ const MYSQL_PORT = parseInt(process.env.MYSQL_PORT || '3306', 10);
 let mysqlPool = null;
 let mysqlReadyPromise = null;
 let lastMysqlFallbackLogAt = 0;
+const qaFailedOAuthIdentityWriteSubjects = new Set();
 
 function logMysqlFallback(scope, error) {
   const now = Date.now();
@@ -80,6 +84,25 @@ function saveStore(store) {
   writeJsonFileAtomic(USERS_FILE, store);
 }
 
+function loadOAuthIdentityStore() {
+  const raw = readJsonStoreStrict(OAUTH_IDENTITIES_FILE);
+  if (raw === null) return { identities: [] };
+  if (!Array.isArray(raw?.identities)) throw createStoreCorruptionError(OAUTH_IDENTITIES_FILE);
+  return raw;
+}
+
+function saveOAuthIdentityStore(store) {
+  const failSubject = String(process.env.TAOYUAN_QA_FAIL_OAUTH_IDENTITY_WRITE_SUB || '').trim();
+  if (failSubject && !qaFailedOAuthIdentityWriteSubjects.has(failSubject)) {
+    const shouldFail = (store?.identities || []).some(item => String(item.provider_subject || '') === failSubject);
+    if (shouldFail) {
+      qaFailedOAuthIdentityWriteSubjects.add(failSubject);
+      throw new Error('QA forced oauth identity write failure');
+    }
+  }
+  writeJsonFileAtomic(OAUTH_IDENTITIES_FILE, { identities: store?.identities || [] });
+}
+
 function normalizeUsername(username) {
   return String(username || '').normalize('NFKC').trim();
 }
@@ -105,6 +128,33 @@ function sanitizeDisplayName(displayName, username) {
   const normalized = normalizeUsername(displayName || fallback);
   const sliced = Array.from(normalized).slice(0, 30).join('');
   return sliced || fallback;
+}
+
+function sha256Hex(value) {
+  return crypto.createHash('sha256').update(String(value || '')).digest('hex');
+}
+
+function getLocalOAuthPendingPath(provider, providerSubject) {
+  const key = sha256Hex(`${provider}:${providerSubject}`);
+  return path.join(DATA_DIR, `${OAUTH_PENDING_PREFIX}${key}.json`);
+}
+
+function listLocalOAuthPendingPaths() {
+  ensureDir();
+  return fs.readdirSync(DATA_DIR)
+    .filter(file => file.startsWith(OAUTH_PENDING_PREFIX) && file.endsWith('.json'))
+    .map(file => path.join(DATA_DIR, file));
+}
+
+function writeLocalOAuthPendingMarker(marker) {
+  writeJsonFileAtomic(getLocalOAuthPendingPath(marker.provider, marker.provider_subject), marker);
+}
+
+function clearLocalOAuthPendingMarker(provider, providerSubject) {
+  const filePath = getLocalOAuthPendingPath(provider, providerSubject);
+  try {
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } catch {}
 }
 
 function nowSeconds() {
@@ -254,6 +304,70 @@ function localUserToPublic(user) {
   };
 }
 
+function adminUserToPublic(user) {
+  if (!user || user.deleted_at || user.status !== 'active') return null;
+  const quota = Number(user.quota) || 0;
+  return {
+    username: user.username,
+    display_name: user.display_name || user.username,
+    quota,
+    dollars: parseFloat((quota / EXCHANGE_RATE).toFixed(4)),
+  };
+}
+
+function normalizeOAuthBoolean(value) {
+  if (value === null || value === undefined) return null;
+  if (value === true || value === 1 || value === '1') return true;
+  if (value === false || value === 0 || value === '0') return false;
+  return null;
+}
+
+function normalizeOAuthIdentity(input = {}) {
+  return {
+    provider: String(input.provider || 'linux_do').trim(),
+    provider_subject: String(input.provider_subject || input.sub || '').trim(),
+    username_key: normalizeUsernameKey(input.username_key || input.username || ''),
+    provider_username: String(input.provider_username || input.username || '').slice(0, 191),
+    provider_login: String(input.provider_login || input.login || '').slice(0, 191),
+    provider_display_name: String(input.provider_display_name || input.name || '').slice(0, 191),
+    avatar_url: String(input.avatar_url || '').slice(0, 512),
+    trust_level: input.trust_level === null || input.trust_level === undefined ? null : Number(input.trust_level) || 0,
+    active: normalizeOAuthBoolean(input.active),
+    silenced: normalizeOAuthBoolean(input.silenced),
+    linked_at: Number(input.linked_at) || nowSeconds(),
+    updated_at: Number(input.updated_at) || nowSeconds(),
+    last_login_at: Number(input.last_login_at) || nowSeconds(),
+  };
+}
+
+function buildOAuthUsername(providerSubject, attempt = 0) {
+  const seed = attempt > 0 ? `${providerSubject}:${attempt}` : providerSubject;
+  return `ldo_${sha256Hex(seed).slice(0, 16)}`;
+}
+
+function buildOAuthPasswordHashInput() {
+  return `oauth:${crypto.randomBytes(48).toString('base64url')}`;
+}
+
+function assertOAuthProviderProfileAllowed(profile = {}) {
+  if (profile.active === false) {
+    const error = new Error('Linux DO 账号不可用');
+    error.code = 'provider_inactive';
+    throw error;
+  }
+  if (profile.silenced === true) {
+    const error = new Error('Linux DO 账号受限');
+    error.code = 'provider_silenced';
+    throw error;
+  }
+}
+
+function createOAuthLoginError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
 function buildMysqlPool() {
   if (!mysqlPool) {
     mysqlPool = mysql.createPool({
@@ -300,6 +414,28 @@ async function ensureMysqlReady() {
           banned_at BIGINT NULL DEFAULT NULL,
           updated_at BIGINT NOT NULL,
           PRIMARY KEY (username_key)
+        ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+      `);
+
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS user_oauth_identities (
+          id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+          provider VARCHAR(32) NOT NULL,
+          provider_subject VARCHAR(191) NOT NULL,
+          username_key VARCHAR(191) NOT NULL,
+          provider_username VARCHAR(191) NOT NULL DEFAULT '',
+          provider_login VARCHAR(191) NOT NULL DEFAULT '',
+          provider_display_name VARCHAR(191) NOT NULL DEFAULT '',
+          avatar_url VARCHAR(512) NOT NULL DEFAULT '',
+          trust_level INT NULL DEFAULT NULL,
+          active TINYINT(1) NULL DEFAULT NULL,
+          silenced TINYINT(1) NULL DEFAULT NULL,
+          linked_at BIGINT NOT NULL,
+          updated_at BIGINT NOT NULL,
+          last_login_at BIGINT NOT NULL,
+          PRIMARY KEY (id),
+          UNIQUE KEY uniq_provider_subject (provider, provider_subject),
+          KEY idx_username_key (username_key)
         ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
       `);
 
@@ -933,6 +1069,372 @@ async function setUserStatus(username, status) {
   return getUserAdmin(username);
 }
 
+async function findOAuthIdentity(provider, providerSubject) {
+  const normalizedProvider = String(provider || '').trim();
+  const normalizedSubject = String(providerSubject || '').trim();
+  if (!normalizedProvider || !normalizedSubject) return null;
+
+  if (MYSQL_ENABLED) {
+    await ensureMysqlReady();
+    const [rows] = await buildMysqlPool().execute(
+      `SELECT provider, provider_subject, username_key, provider_username, provider_login,
+        provider_display_name, avatar_url, trust_level, active, silenced,
+        linked_at, updated_at, last_login_at
+       FROM user_oauth_identities
+       WHERE provider = ? AND provider_subject = ?
+       LIMIT 1`,
+      [normalizedProvider, normalizedSubject]
+    );
+    return rows[0] ? normalizeOAuthIdentity(rows[0]) : null;
+  }
+
+  const store = loadOAuthIdentityStore();
+  const item = store.identities.find(identity =>
+    String(identity.provider || '') === normalizedProvider
+    && String(identity.provider_subject || '') === normalizedSubject
+  );
+  return item ? normalizeOAuthIdentity(item) : null;
+}
+
+async function updateOAuthIdentityLastLogin(provider, providerSubject, profile = {}) {
+  const normalizedProvider = String(provider || '').trim();
+  const normalizedSubject = String(providerSubject || '').trim();
+  const now = nowSeconds();
+  const patch = normalizeOAuthIdentity({
+    ...profile,
+    provider: normalizedProvider,
+    provider_subject: normalizedSubject,
+    updated_at: now,
+    last_login_at: now,
+  });
+
+  if (MYSQL_ENABLED) {
+    await ensureMysqlReady();
+    await buildMysqlPool().execute(
+      `UPDATE user_oauth_identities
+       SET provider_username = ?, provider_login = ?, provider_display_name = ?, avatar_url = ?,
+        trust_level = ?, active = ?, silenced = ?, updated_at = ?, last_login_at = ?
+       WHERE provider = ? AND provider_subject = ?`,
+      [
+        patch.provider_username,
+        patch.provider_login,
+        patch.provider_display_name,
+        patch.avatar_url,
+        patch.trust_level,
+        patch.active === null ? null : (patch.active ? 1 : 0),
+        patch.silenced === null ? null : (patch.silenced ? 1 : 0),
+        now,
+        now,
+        normalizedProvider,
+        normalizedSubject,
+      ]
+    );
+    return;
+  }
+
+  const store = loadOAuthIdentityStore();
+  const index = store.identities.findIndex(identity =>
+    String(identity.provider || '') === normalizedProvider
+    && String(identity.provider_subject || '') === normalizedSubject
+  );
+  if (index < 0) return;
+  store.identities[index] = {
+    ...store.identities[index],
+    provider_username: patch.provider_username,
+    provider_login: patch.provider_login,
+    provider_display_name: patch.provider_display_name,
+    avatar_url: patch.avatar_url,
+    trust_level: patch.trust_level,
+    active: patch.active,
+    silenced: patch.silenced,
+    updated_at: now,
+    last_login_at: now,
+  };
+  saveOAuthIdentityStore(store);
+}
+
+async function loginWithOAuthIdentity(provider, providerSubject, profile = {}, options = {}) {
+  const normalizedProvider = String(provider || '').trim();
+  const normalizedSubject = String(providerSubject || '').trim();
+  if (!normalizedProvider || !normalizedSubject) {
+    throw createOAuthLoginError('invalid_subject', 'OAuth subject 不能为空');
+  }
+  assertOAuthProviderProfileAllowed(profile);
+
+  const autoCreate = options.autoCreate !== false;
+  const existing = await findOAuthIdentity(normalizedProvider, normalizedSubject);
+  if (existing) {
+    await updateOAuthIdentityLastLogin(normalizedProvider, normalizedSubject, profile);
+    const user = await getUserAdmin(existing.username_key);
+    if (!user || user.status === 'deleted' || user.deleted_at) {
+      throw createOAuthLoginError('local_deleted', '账号不存在或已删除');
+    }
+    if (user.status === 'banned') {
+      throw createOAuthLoginError('local_banned', '账号已被封禁');
+    }
+    if (user.status !== 'active') {
+      throw createOAuthLoginError('local_inactive', '账号不可用');
+    }
+    return { ok: true, user: adminUserToPublic(user), created: false };
+  }
+
+  if (!autoCreate) {
+    throw createOAuthLoginError('auto_create_disabled', '未开放自动创建账号');
+  }
+
+  if (MYSQL_ENABLED) {
+    return createMysqlOAuthUser(normalizedProvider, normalizedSubject, profile);
+  }
+  return createLocalOAuthUser(normalizedProvider, normalizedSubject, profile);
+}
+
+async function createMysqlOAuthUser(provider, providerSubject, profile = {}) {
+  await ensureMysqlReady();
+  const pool = buildMysqlPool();
+  const conn = await pool.getConnection();
+  const now = nowSeconds();
+  const passwordHash = await bcrypt.hash(buildOAuthPasswordHashInput(), 10);
+  const displayNameSeed = profile.name || profile.username || profile.login || '';
+
+  try {
+    await conn.beginTransaction();
+
+    const [identityRows] = await conn.execute(
+      'SELECT username_key FROM user_oauth_identities WHERE provider = ? AND provider_subject = ? LIMIT 1 FOR UPDATE',
+      [provider, providerSubject]
+    );
+    if (identityRows.length > 0) {
+      await conn.commit();
+      return loginWithOAuthIdentity(provider, providerSubject, profile, { autoCreate: false });
+    }
+
+    let normalized = '';
+    let usernameKey = '';
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      normalized = buildOAuthUsername(providerSubject, attempt);
+      usernameKey = normalizeUsernameKey(normalized);
+      const [existsRows] = await conn.execute(
+        'SELECT id FROM users WHERE username_key = ? LIMIT 1',
+        [usernameKey]
+      );
+      if (existsRows.length === 0) break;
+      normalized = '';
+      usernameKey = '';
+    }
+    if (!normalized || validateUsername(normalized)) {
+      throw createOAuthLoginError('username_conflict', '无法生成可用用户名');
+    }
+
+    const finalDisplayName = sanitizeDisplayName(displayNameSeed, normalized);
+    await conn.execute(
+      'INSERT INTO users (username, username_key, display_name, password_hash, quota, created_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, NULL)',
+      [normalized, usernameKey, finalDisplayName, passwordHash, DEFAULT_USER_QUOTA, now]
+    );
+
+    const identity = normalizeOAuthIdentity({
+      provider,
+      provider_subject: providerSubject,
+      username_key: usernameKey,
+      provider_username: profile.username,
+      provider_login: profile.login,
+      provider_display_name: finalDisplayName,
+      avatar_url: profile.avatar_url,
+      trust_level: profile.trust_level,
+      active: profile.active,
+      silenced: profile.silenced,
+      linked_at: now,
+      updated_at: now,
+      last_login_at: now,
+    });
+    await conn.execute(
+      `INSERT INTO user_oauth_identities
+       (provider, provider_subject, username_key, provider_username, provider_login,
+        provider_display_name, avatar_url, trust_level, active, silenced, linked_at, updated_at, last_login_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        identity.provider,
+        identity.provider_subject,
+        identity.username_key,
+        identity.provider_username,
+        identity.provider_login,
+        identity.provider_display_name,
+        identity.avatar_url,
+        identity.trust_level,
+        identity.active === null ? null : (identity.active ? 1 : 0),
+        identity.silenced === null ? null : (identity.silenced ? 1 : 0),
+        now,
+        now,
+        now,
+      ]
+    );
+    await conn.commit();
+
+    return {
+      ok: true,
+      created: true,
+      user: {
+        username: normalized,
+        display_name: finalDisplayName,
+        quota: DEFAULT_USER_QUOTA,
+        dollars: parseFloat((DEFAULT_USER_QUOTA / EXCHANGE_RATE).toFixed(4)),
+      },
+    };
+  } catch (error) {
+    try {
+      await conn.rollback();
+    } catch {}
+    if (error?.code === 'ER_DUP_ENTRY') {
+      return loginWithOAuthIdentity(provider, providerSubject, profile, { autoCreate: false });
+    }
+    throw error;
+  } finally {
+    conn.release();
+  }
+}
+
+let localOAuthCreateLock = Promise.resolve();
+async function withLocalOAuthCreateLock(fn) {
+  let release;
+  const previous = localOAuthCreateLock;
+  localOAuthCreateLock = new Promise(resolve => { release = resolve; });
+  await previous;
+  try {
+    return await fn();
+  } finally {
+    release();
+  }
+}
+
+async function createLocalOAuthUser(provider, providerSubject, profile = {}) {
+  return withLocalOAuthCreateLock(async () => {
+    recoverLocalOAuthPendingCreates();
+    const existing = await findOAuthIdentity(provider, providerSubject);
+    if (existing) return loginWithOAuthIdentity(provider, providerSubject, profile, { autoCreate: false });
+
+    const userStore = loadStore();
+    const identityStore = loadOAuthIdentityStore();
+    const now = nowSeconds();
+    const passwordHash = await bcrypt.hash(buildOAuthPasswordHashInput(), 10);
+    const displayNameSeed = profile.name || profile.username || profile.login || '';
+
+    let normalized = '';
+    let usernameKey = '';
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      normalized = buildOAuthUsername(providerSubject, attempt);
+      usernameKey = normalizeUsernameKey(normalized);
+      const exists = userStore.users.some(item => (item.username_key || normalizeUsernameKey(item.username)) === usernameKey);
+      if (!exists) break;
+      normalized = '';
+      usernameKey = '';
+    }
+    if (!normalized || validateUsername(normalized)) {
+      throw createOAuthLoginError('username_conflict', '无法生成可用用户名');
+    }
+
+    const finalDisplayName = sanitizeDisplayName(displayNameSeed, normalized);
+    const nextUser = {
+      username: normalized,
+      username_key: usernameKey,
+      display_name: finalDisplayName,
+      password_hash: passwordHash,
+      quota: DEFAULT_USER_QUOTA,
+      created_at: now,
+      deleted_at: null,
+    };
+    const identity = normalizeOAuthIdentity({
+      provider,
+      provider_subject: providerSubject,
+      username_key: usernameKey,
+      provider_username: profile.username,
+      provider_login: profile.login,
+      provider_display_name: finalDisplayName,
+      avatar_url: profile.avatar_url,
+      trust_level: profile.trust_level,
+      active: profile.active,
+      silenced: profile.silenced,
+      linked_at: now,
+      updated_at: now,
+      last_login_at: now,
+    });
+
+    const marker = {
+      provider,
+      provider_subject: providerSubject,
+      username_key: usernameKey,
+      created_at: now,
+    };
+    writeLocalOAuthPendingMarker(marker);
+
+    try {
+      userStore.users.push(nextUser);
+      userStore.users.sort((a, b) => a.username.localeCompare(b.username, 'zh-CN'));
+      identityStore.identities.push(identity);
+      saveStore(userStore);
+      saveOAuthIdentityStore(identityStore);
+      clearLocalOAuthPendingMarker(provider, providerSubject);
+    } catch (error) {
+      rollbackLocalOAuthUser(usernameKey);
+      clearLocalOAuthPendingMarker(provider, providerSubject);
+      throw error;
+    }
+
+    return {
+      ok: true,
+      created: true,
+      user: {
+        username: normalized,
+        display_name: finalDisplayName,
+        quota: DEFAULT_USER_QUOTA,
+        dollars: parseFloat((DEFAULT_USER_QUOTA / EXCHANGE_RATE).toFixed(4)),
+      },
+    };
+  });
+}
+
+function recoverLocalOAuthPendingCreates() {
+  for (const filePath of listLocalOAuthPendingPaths()) {
+    let marker = null;
+    try {
+      marker = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    } catch {
+      try {
+        fs.unlinkSync(filePath);
+      } catch {}
+      continue;
+    }
+
+    const provider = String(marker?.provider || '').trim();
+    const providerSubject = String(marker?.provider_subject || '').trim();
+    const usernameKey = normalizeUsernameKey(marker?.username_key || '');
+    if (!provider || !providerSubject || !usernameKey) {
+      try {
+        fs.unlinkSync(filePath);
+      } catch {}
+      continue;
+    }
+
+    const identityStore = loadOAuthIdentityStore();
+    const hasIdentity = identityStore.identities.some(identity =>
+      String(identity.provider || '') === provider
+      && String(identity.provider_subject || '') === providerSubject
+      && normalizeUsernameKey(identity.username_key) === usernameKey
+    );
+    if (!hasIdentity) rollbackLocalOAuthUser(usernameKey);
+    try {
+      fs.unlinkSync(filePath);
+    } catch {}
+  }
+}
+
+function rollbackLocalOAuthUser(usernameKey) {
+  const normalizedKey = normalizeUsernameKey(usernameKey);
+  if (!normalizedKey) return;
+  const store = loadStore();
+  const nextUsers = store.users.filter(item => (item.username_key || normalizeUsernameKey(item.username)) !== normalizedKey);
+  if (nextUsers.length === store.users.length) return;
+  saveStore({ ...store, users: nextUsers });
+}
+
 async function recordAdminAuditLog(entry = {}) {
   const now = nowSeconds();
   const normalized = normalizeAuditLogEntry({
@@ -1374,6 +1876,8 @@ module.exports = {
   recordGameplayEventLog,
   listGameplayEventLogs,
   getUserAccessState,
+  findOAuthIdentity,
+  loginWithOAuthIdentity,
   EXCHANGE_RATE,
   MYSQL_ENABLED,
   ensureMysqlReady,
