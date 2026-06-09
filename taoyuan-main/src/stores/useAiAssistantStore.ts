@@ -12,7 +12,7 @@ const defaultPublicConfig = (): AiAssistantPublicConfig => ({
   assistantName: '桃源小助理',
   welcomeMessage: '你好，我是桃源小助理。你可以问我玩法、系统机制和攻略建议。',
   consoleCreditMessage:
-    '本项目由Memorial开发，开源地址：https://github.com/Memorial-coder/taoyuan-duli，如果你觉得这个项目对你有帮助，也欢迎前往仓库点个 Star 支持一下，玩家交流群1094297186',
+    '本项目由Memorial开发，感谢每一位玩家的支持。',
   providerConfigured: false,
 })
 

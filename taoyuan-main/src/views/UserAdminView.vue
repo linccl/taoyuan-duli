@@ -1,5 +1,5 @@
 ﻿/*
- * 本项目由Memorial开发，开源地址：https://github.com/Memorial-coder/taoyuan-duli，如果你觉得这个项目对你有帮助，也欢迎前往仓库点个 Star 支持一下，玩家交流群1094297186
+ * 本项目由Memorial开发，感谢每一位玩家的支持。
  */
 <template>
   <div class="min-h-screen px-1 py-4 md:px-2 md:py-5 xl:px-3 2xl:px-4" :class="{ 'pt-10': Capacitor.isNativePlatform() }">
@@ -1393,4 +1393,3 @@
     background: rgba(184, 70, 70, 0.35);
   }
 </style>
-
