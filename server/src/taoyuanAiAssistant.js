@@ -3965,7 +3965,7 @@ function getMode() {
 }
 
 const DEFAULT_CONSOLE_CREDIT_MESSAGE =
-  '本项目由Memorial开发，开源地址：https://github.com/Memorial-coder/taoyuan-duli，如果你觉得这个项目对你有帮助，也欢迎前往仓库点个 Star 支持一下，玩家交流群1094297186';
+  '桃源乡独立版已加载，祝你游玩愉快。';
 
 const OFFICIAL_MANAGED_AI_FIELDS = Object.freeze([
   'ai_assistant_name',
