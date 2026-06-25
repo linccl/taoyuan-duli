@@ -183,6 +183,16 @@ function officialControlSecondAuth(req, res, next) {
   next();
 }
 
+async function recordAuthenticatedUserActivity(req) {
+  const username = req.session?.username;
+  if (!username) return;
+  try {
+    await db.recordUserActivity(username);
+  } catch (error) {
+    console.warn(`[user-activity] record failed for ${username}: ${error?.message || error}`);
+  }
+}
+
 function loginRequired(req, res, next) {
   void (async () => {
     if (!req.session || !req.session.username) {
@@ -203,6 +213,7 @@ function loginRequired(req, res, next) {
       return;
     }
 
+    await recordAuthenticatedUserActivity(req);
     next();
   })().catch(next);
 }
