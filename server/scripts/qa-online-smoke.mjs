@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { rm } from 'node:fs/promises'
+import { readFile, rm } from 'node:fs/promises'
 import net from 'node:net'
 import path from 'node:path'
 import { createRequire } from 'node:module'
@@ -13,6 +13,7 @@ const dotenv = require('dotenv')
 const serverRoot = path.resolve(__dirname, '..')
 const smokeTempDir = path.resolve(serverRoot, '.tmp-online-smoke-run')
 const smokeStorageFile = path.resolve(smokeTempDir, '.storage.json')
+const smokeUserActivityFile = path.resolve(smokeTempDir, 'user_activity.json')
 const host = '127.0.0.1'
 const preferredPort = Number(process.env.TAOYUAN_ONLINE_SMOKE_PORT || 4013)
 const configuredBaseURL = process.env.TAOYUAN_ONLINE_SMOKE_BASE_URL?.trim() || ''
@@ -101,6 +102,7 @@ const fetchJson = async (pathname, init) => {
 const sessionState = createSessionState()
 const secondarySessionState = createSessionState()
 const tertiarySessionState = createSessionState()
+const inactiveSessionState = createSessionState()
 
 const updateCookie = (session, response) => {
   const rawSetCookie = typeof response.headers.getSetCookie === 'function'
@@ -135,6 +137,14 @@ const fetchSessionJson = async (session, pathname, init = {}) => {
 }
 
 const fetchAuthedJson = async (pathname, init = {}) => fetchSessionJson(sessionState, pathname, init)
+
+const readSmokeUserActivity = async () => {
+  const raw = await readFile(smokeUserActivityFile, 'utf8')
+  const parsed = JSON.parse(raw)
+  return parsed?.users && typeof parsed.users === 'object' ? parsed.users : {}
+}
+
+const normalizeUsernameKey = username => String(username || '').normalize('NFKC').trim().toLocaleLowerCase('zh-CN')
 
 const runCheck = async (label, runner) => {
   await runner()
