@@ -13,11 +13,18 @@ export type QmsgLimitWidthWrap = 'no-wrap' | 'wrap' | 'ellipsis'
 export const DEFAULT_FONT_SIZE = 16
 export const MIN_FONT_SIZE = 8
 export const MAX_FONT_SIZE = 24
-export type FontColorKey = 'theme' | 'cream' | 'ink' | 'gold' | 'jade'
+export type FontColorKey = 'theme' | 'cream' | 'ink' | 'gold' | 'jade' | 'custom'
+export type MutedColorKey = 'theme' | 'gray' | 'soft' | 'warm' | 'slate' | 'custom'
 export type FontWeightValue = 400 | 500 | 600 | 700
 
 export interface FontColorOption {
   value: FontColorKey
+  label: string
+  hex: string | null
+}
+
+export interface MutedColorOption {
+  value: MutedColorKey
   label: string
   hex: string | null
 }
@@ -32,7 +39,17 @@ export const FONT_COLOR_OPTIONS: FontColorOption[] = [
   { value: 'cream', label: '米白', hex: '#e8e4d9' },
   { value: 'ink', label: '墨黑', hex: '#2c2c2c' },
   { value: 'gold', label: '金色', hex: '#c8a45c' },
-  { value: 'jade', label: '青绿', hex: '#7fb08a' }
+  { value: 'jade', label: '青绿', hex: '#7fb08a' },
+  { value: 'custom', label: '自定义', hex: null }
+]
+
+export const MUTED_COLOR_OPTIONS: MutedColorOption[] = [
+  { value: 'theme', label: '随主题', hex: null },
+  { value: 'gray', label: '石灰', hex: '#6b7280' },
+  { value: 'soft', label: '浅灰', hex: '#9ca3af' },
+  { value: 'warm', label: '暖灰', hex: '#a89984' },
+  { value: 'slate', label: '烟蓝', hex: '#64748b' },
+  { value: 'custom', label: '自定义', hex: null }
 ]
 
 export const FONT_WEIGHT_OPTIONS: FontWeightOption[] = [
@@ -43,19 +60,44 @@ export const FONT_WEIGHT_OPTIONS: FontWeightOption[] = [
 ]
 
 const DEFAULT_FONT_COLOR: FontColorKey = 'theme'
+const DEFAULT_FONT_CUSTOM_COLOR = '#e8e4d9'
+const DEFAULT_MUTED_COLOR: MutedColorKey = 'theme'
+const DEFAULT_MUTED_CUSTOM_COLOR = '#6b7280'
 const DEFAULT_FONT_WEIGHT: FontWeightValue = 400
 const DEFAULT_THEME: ThemeKey = 'dark'
 const DEFAULT_QMSG_POSITION: QmsgPosition = 'top'
-const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/
+const HEX_COLOR_PATTERN = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/
+const THEME_MUTED_COLOR_MAP: Record<ThemeKey, string> = {
+  dark: '#6b7280',
+  warm: '#a09686',
+  ink: '#707070',
+  parchment: '#786b5d'
+}
 
 const clampFontSize = (value: number) => Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, Math.round(value)))
+const normalizeHexColor = (value: unknown): string | null => {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (!HEX_COLOR_PATTERN.test(trimmed)) return null
+  const body = trimmed.slice(1)
+  if (body.length === 3) {
+    return `#${body.split('').map(char => `${char}${char}`).join('')}`.toLowerCase()
+  }
+  return `#${body}`.toLowerCase()
+}
 const isFontColorKey = (value: unknown): value is FontColorKey =>
   typeof value === 'string' && FONT_COLOR_OPTIONS.some(option => option.value === value)
+const isMutedColorKey = (value: unknown): value is MutedColorKey =>
+  typeof value === 'string' && MUTED_COLOR_OPTIONS.some(option => option.value === value)
 const normalizeFontColor = (value: unknown): FontColorKey => (isFontColorKey(value) ? value : DEFAULT_FONT_COLOR)
+const normalizeMutedColor = (value: unknown): MutedColorKey => (isMutedColorKey(value) ? value : DEFAULT_MUTED_COLOR)
 const getFontColorHex = (value: FontColorKey): string | null => {
   const option = FONT_COLOR_OPTIONS.find(item => item.value === value)
-  if (!option?.hex) return null
-  return HEX_COLOR_PATTERN.test(option.hex) ? option.hex : null
+  return normalizeHexColor(option?.hex)
+}
+const getMutedColorHex = (value: MutedColorKey): string | null => {
+  const option = MUTED_COLOR_OPTIONS.find(item => item.value === value)
+  return normalizeHexColor(option?.hex)
 }
 const normalizeFontWeight = (value: unknown): FontWeightValue => {
   const numeric = typeof value === 'number' ? value : Number(value)
@@ -65,6 +107,9 @@ const normalizeFontWeight = (value: unknown): FontWeightValue => {
 interface SerializedSettingsState {
   fontSize: number
   fontColor: FontColorKey
+  fontCustomColor: string
+  mutedColor: MutedColorKey
+  mutedCustomColor: string
   fontWeight: FontWeightValue
   sfxEnabled: boolean
   bgmEnabled: boolean
@@ -88,6 +133,9 @@ interface SerializedSettingsState {
 export const useSettingsStore = defineStore('settings', () => {
   const fontSize = ref(DEFAULT_FONT_SIZE)
   const fontColor = ref<FontColorKey>(DEFAULT_FONT_COLOR)
+  const fontCustomColor = ref(DEFAULT_FONT_CUSTOM_COLOR)
+  const mutedColor = ref<MutedColorKey>(DEFAULT_MUTED_COLOR)
+  const mutedCustomColor = ref(DEFAULT_MUTED_CUSTOM_COLOR)
   const fontWeight = ref<FontWeightValue>(DEFAULT_FONT_WEIGHT)
   const theme = ref<ThemeKey>(DEFAULT_THEME)
   const qmsgPosition = ref<QmsgPosition>(DEFAULT_QMSG_POSITION)
@@ -116,7 +164,19 @@ export const useSettingsStore = defineStore('settings', () => {
   const applyFontColor = () => {
     fontColor.value = normalizeFontColor(fontColor.value)
     const themeText = getThemeByKey(theme.value).text
-    document.documentElement.style.setProperty('--color-text', hexToRgb(getFontColorHex(fontColor.value) ?? themeText))
+    const customHex = normalizeHexColor(fontCustomColor.value) ?? DEFAULT_FONT_CUSTOM_COLOR
+    fontCustomColor.value = customHex
+    document.documentElement.style.setProperty('--color-text', hexToRgb(fontColor.value === 'custom' ? customHex : (getFontColorHex(fontColor.value) ?? themeText)))
+  }
+
+  const applyMutedColor = () => {
+    mutedColor.value = normalizeMutedColor(mutedColor.value)
+    const themeMuted = THEME_MUTED_COLOR_MAP[theme.value]
+    const customHex = normalizeHexColor(mutedCustomColor.value) ?? DEFAULT_MUTED_CUSTOM_COLOR
+    const nextHex = mutedColor.value === 'custom' ? customHex : (getMutedColorHex(mutedColor.value) ?? themeMuted)
+    mutedCustomColor.value = customHex
+    document.documentElement.style.setProperty('--color-muted', nextHex)
+    document.documentElement.style.setProperty('--color-muted-rgb', hexToRgb(nextHex))
   }
 
   const applyFontWeight = () => {
@@ -129,6 +189,7 @@ export const useSettingsStore = defineStore('settings', () => {
     document.documentElement.style.setProperty('--color-bg', hexToRgb(t.bg))
     document.documentElement.style.setProperty('--color-panel', hexToRgb(t.panel))
     applyFontColor()
+    applyMutedColor()
   }
 
   const changeFontSize = (delta: number) => {
@@ -139,6 +200,29 @@ export const useSettingsStore = defineStore('settings', () => {
   const changeFontColor = (value: FontColorKey) => {
     fontColor.value = normalizeFontColor(value)
     applyFontColor()
+  }
+
+  const changeFontCustomColor = (value: string) => {
+    const normalized = normalizeHexColor(value)
+    if (!normalized) return false
+    fontCustomColor.value = normalized
+    fontColor.value = 'custom'
+    applyFontColor()
+    return true
+  }
+
+  const changeMutedColor = (value: MutedColorKey) => {
+    mutedColor.value = normalizeMutedColor(value)
+    applyMutedColor()
+  }
+
+  const changeMutedCustomColor = (value: string) => {
+    const normalized = normalizeHexColor(value)
+    if (!normalized) return false
+    mutedCustomColor.value = normalized
+    mutedColor.value = 'custom'
+    applyMutedColor()
+    return true
   }
 
   const changeFontWeight = (value: FontWeightValue) => {
@@ -232,6 +316,9 @@ export const useSettingsStore = defineStore('settings', () => {
     return {
       fontSize: fontSize.value,
       fontColor: fontColor.value,
+      fontCustomColor: normalizeHexColor(fontCustomColor.value) ?? DEFAULT_FONT_CUSTOM_COLOR,
+      mutedColor: mutedColor.value,
+      mutedCustomColor: normalizeHexColor(mutedCustomColor.value) ?? DEFAULT_MUTED_CUSTOM_COLOR,
       fontWeight: fontWeight.value,
       sfxEnabled: sfxEnabled.value,
       bgmEnabled: bgmEnabled.value,
@@ -258,6 +345,9 @@ export const useSettingsStore = defineStore('settings', () => {
     fontSize.value = clampFontSize(data?.fontSize ?? DEFAULT_FONT_SIZE)
     applyFontSize()
     fontColor.value = normalizeFontColor(data?.fontColor)
+    fontCustomColor.value = normalizeHexColor(data?.fontCustomColor) ?? DEFAULT_FONT_CUSTOM_COLOR
+    mutedColor.value = normalizeMutedColor(data?.mutedColor)
+    mutedCustomColor.value = normalizeHexColor(data?.mutedCustomColor) ?? DEFAULT_MUTED_CUSTOM_COLOR
     fontWeight.value = normalizeFontWeight(data?.fontWeight)
     applyFontWeight()
     theme.value = data?.theme ?? DEFAULT_THEME
@@ -300,6 +390,9 @@ export const useSettingsStore = defineStore('settings', () => {
   return {
     fontSize,
     fontColor,
+    fontCustomColor,
+    mutedColor,
+    mutedCustomColor,
     fontWeight,
     theme,
     qmsgPosition,
@@ -320,6 +413,9 @@ export const useSettingsStore = defineStore('settings', () => {
     lateGameFeatureConfigs: LATE_GAME_FEATURE_FLAGS,
     changeFontSize,
     changeFontColor,
+    changeFontCustomColor,
+    changeMutedColor,
+    changeMutedCustomColor,
     changeFontWeight,
     changeTheme,
     changeQmsgPosition,
@@ -336,6 +432,7 @@ export const useSettingsStore = defineStore('settings', () => {
     clearLateGameBalanceOverrides,
     applyFontSize,
     applyFontColor,
+    applyMutedColor,
     applyFontWeight,
     applyTheme,
     serialize,
