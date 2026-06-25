@@ -475,7 +475,7 @@
     flex-direction: column;
     gap: 6px;
     font-size: 12px;
-    color: rgb(var(--color-muted-rgb));
+    color: rgb(var(--color-muted));
   }
 
   .admin-input,
@@ -555,7 +555,7 @@
   .admin-markdown-preview :deep(figcaption) {
     margin-top: 6px;
     font-size: 11px;
-    color: rgb(var(--color-muted-rgb));
+    color: rgb(var(--color-muted));
     text-align: center;
   }
 

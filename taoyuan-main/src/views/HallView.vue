@@ -1740,7 +1740,7 @@
 
   .hall-select-wrap__label {
     font-size: 12px;
-    color: rgb(var(--color-muted-rgb));
+    color: rgb(var(--color-muted));
     white-space: nowrap;
   }
 
@@ -1759,7 +1759,7 @@
   }
 
   .hall-select-button__arrow {
-    color: rgb(var(--color-muted-rgb));
+    color: rgb(var(--color-muted));
   }
 
   .hall-dropdown-panel {

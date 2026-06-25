@@ -1591,7 +1591,7 @@
     flex-direction: column;
     gap: 6px;
     font-size: 12px;
-    color: rgb(var(--color-muted-rgb));
+    color: rgb(var(--color-muted));
   }
 
   .admin-input,
@@ -1720,7 +1720,7 @@
   .recipient-chip-remove {
     border: none;
     background: transparent;
-    color: rgb(var(--color-muted-rgb));
+    color: rgb(var(--color-muted));
     cursor: pointer;
     padding: 0;
     line-height: 1;
@@ -1809,7 +1809,7 @@
   }
 
   .admin-table th {
-    color: rgb(var(--color-muted-rgb));
+    color: rgb(var(--color-muted));
     font-weight: 500;
   }
 
@@ -1846,7 +1846,7 @@
 
   .admin-delivery-card__label {
     font-size: 11px;
-    color: rgb(var(--color-muted-rgb));
+    color: rgb(var(--color-muted));
   }
 
   .admin-delivery-card__value {

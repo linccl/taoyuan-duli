@@ -567,7 +567,7 @@
     flex-direction: column;
     gap: 6px;
     font-size: 12px;
-    color: rgb(var(--color-muted-rgb));
+    color: rgb(var(--color-muted));
   }
 
   .official-control-input,
