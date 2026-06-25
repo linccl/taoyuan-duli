@@ -22,7 +22,7 @@ export default {
         success: '#5a9e6f',
         water: '#4c6e8a',
         earth: '#8b6914',
-        muted: '#6b7280',
+        muted: themeColor('muted-rgb'),
         'quality-fine': '#d4976a',
         'quality-excellent': '#a8c4d4',
         'quality-supreme': '#ffd700'

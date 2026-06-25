@@ -229,7 +229,7 @@
     flex-direction: column;
     gap: 6px;
     font-size: 12px;
-    color: rgb(var(--color-muted));
+    color: rgb(var(--color-muted-rgb));
   }
 
   .admin-input {

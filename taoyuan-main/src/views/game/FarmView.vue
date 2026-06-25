@@ -2381,28 +2381,28 @@
 
   .farm-batch-action__count {
     flex-shrink: 0;
-    color: rgb(var(--color-muted));
+    color: rgb(var(--color-muted-rgb));
   }
 
   .farm-batch-action:disabled {
     opacity: 1;
     cursor: not-allowed;
-    color: rgb(var(--color-muted));
+    color: rgb(var(--color-muted-rgb));
     background-color: rgba(var(--color-panel), 0.92);
     border-color: rgba(200, 164, 92, 0.18);
-    -webkit-text-fill-color: rgb(var(--color-muted));
+    -webkit-text-fill-color: rgb(var(--color-muted-rgb));
   }
 
   .farm-batch-action:disabled:hover {
     background-color: rgba(var(--color-panel), 0.92);
-    color: rgb(var(--color-muted));
-    -webkit-text-fill-color: rgb(var(--color-muted));
+    color: rgb(var(--color-muted-rgb));
+    -webkit-text-fill-color: rgb(var(--color-muted-rgb));
   }
 
   .farm-batch-action:disabled .farm-batch-action__label,
   .farm-batch-action:disabled .farm-batch-action__count {
-    color: rgb(var(--color-muted));
+    color: rgb(var(--color-muted-rgb));
     opacity: 1;
-    -webkit-text-fill-color: rgb(var(--color-muted));
+    -webkit-text-fill-color: rgb(var(--color-muted-rgb));
   }
 </style>

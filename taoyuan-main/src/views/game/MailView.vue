@@ -643,7 +643,7 @@
   }
 
   .badge-muted {
-    color: rgb(var(--color-muted));
+    color: rgb(var(--color-muted-rgb));
     border-color: rgba(200, 164, 92, 0.16);
     background: rgba(255, 255, 255, 0.04);
   }

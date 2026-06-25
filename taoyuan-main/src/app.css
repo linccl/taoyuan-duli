@@ -24,6 +24,7 @@
   --color-water: #4c6e8a;
   --color-earth: #8b6914;
   --color-muted: #6b7280;
+  --color-muted-rgb: 107 114 128;
 
   /* 品质颜色 */
   --color-quality-fine: #d4976a;
@@ -232,7 +233,7 @@ button {
   border-radius: 2px;
   background: rgba(26, 26, 26, 0.18);
   padding: 6px 8px;
-  color: rgba(107, 114, 128, 0.95);
+  color: rgb(var(--color-muted-rgb) / 0.95);
   font-size: 0.625rem;
   line-height: 1.6;
 }

@@ -917,7 +917,7 @@
   .main-menu-about-markdown :deep(figcaption) {
     margin-top: 6px;
     font-size: 11px;
-    color: rgb(var(--color-muted));
+    color: rgb(var(--color-muted-rgb));
     text-align: center;
   }
 

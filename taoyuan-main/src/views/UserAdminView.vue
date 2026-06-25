@@ -967,7 +967,7 @@
     flex-direction: column;
     gap: 6px;
     font-size: 12px;
-    color: rgb(var(--color-muted));
+    color: rgb(var(--color-muted-rgb));
   }
 
   .admin-input,
@@ -1050,7 +1050,7 @@
   }
 
   .admin-user-cell__secondary {
-    color: rgb(var(--color-muted));
+    color: rgb(var(--color-muted-rgb));
     font-size: 11px;
     line-height: 1.5;
   }
@@ -1096,7 +1096,7 @@
     background: rgba(200, 164, 92, 0.08);
     border-bottom: 1px solid rgba(200, 164, 92, 0.14);
     font-size: 11px;
-    color: rgb(var(--color-muted));
+    color: rgb(var(--color-muted-rgb));
   }
 
   .admin-user-table--row {
@@ -1127,7 +1127,7 @@
   .admin-user-line__hint {
     margin-top: 4px;
     font-size: 11px;
-    color: rgb(var(--color-muted));
+    color: rgb(var(--color-muted-rgb));
     line-height: 1.5;
   }
 
@@ -1215,7 +1215,7 @@
       display: block;
       margin-bottom: 4px;
       font-size: 10px;
-      color: rgb(var(--color-muted));
+      color: rgb(var(--color-muted-rgb));
       letter-spacing: 0.02em;
     }
 
@@ -1356,7 +1356,7 @@
   }
 
   .admin-status--offline {
-    color: rgb(var(--color-muted));
+    color: rgb(var(--color-muted-rgb));
     background: rgba(120, 120, 120, 0.1);
     border-color: rgba(160, 160, 160, 0.18);
   }
