@@ -1077,17 +1077,18 @@
   .admin-user-table {
     display: grid;
     grid-template-columns:
-      minmax(180px, 1.3fr)
-      minmax(144px, 0.95fr)
-      minmax(88px, 0.6fr)
-      minmax(88px, 0.6fr)
-      minmax(150px, 0.95fr)
-      minmax(220px, 1.35fr)
+      minmax(180px, 1.2fr)
+      minmax(140px, 0.9fr)
+      minmax(82px, 0.5fr)
+      minmax(116px, 0.7fr)
+      minmax(80px, 0.5fr)
+      minmax(140px, 0.85fr)
+      minmax(200px, 1.15fr)
       minmax(220px, 1.3fr);
     gap: 12px;
     align-items: center;
     width: 100%;
-    min-width: 1180px;
+    min-width: 1240px;
   }
 
   .admin-user-table--head {
@@ -1135,6 +1136,10 @@
     justify-content: flex-end;
   }
 
+  .admin-user-line--activity .admin-user-line__hint {
+    margin-top: 5px;
+  }
+
   .admin-detail-modal-backdrop {
     position: fixed;
     inset: 0;
@@ -1170,12 +1175,13 @@
   @media (max-width: 1535px) {
     .admin-user-table {
       grid-template-columns:
-        minmax(170px, 1.2fr)
-        minmax(132px, 0.9fr)
-        minmax(82px, 0.55fr)
-        minmax(82px, 0.55fr)
-        minmax(130px, 0.85fr)
-        minmax(180px, 1.15fr)
+        minmax(170px, 1.15fr)
+        minmax(132px, 0.85fr)
+        minmax(76px, 0.5fr)
+        minmax(104px, 0.65fr)
+        minmax(76px, 0.5fr)
+        minmax(126px, 0.8fr)
+        minmax(176px, 1.05fr)
         minmax(200px, 1.15fr);
       gap: 10px;
     }
@@ -1341,6 +1347,18 @@
     color: #ff9f9f;
     background: rgba(184, 70, 70, 0.14);
     border-color: rgba(184, 70, 70, 0.3);
+  }
+
+  .admin-status--online {
+    color: #96deac;
+    background: rgba(72, 146, 95, 0.14);
+    border-color: rgba(72, 146, 95, 0.3);
+  }
+
+  .admin-status--offline {
+    color: rgb(var(--color-muted));
+    background: rgba(120, 120, 120, 0.1);
+    border-color: rgba(160, 160, 160, 0.18);
   }
 
   .admin-slot-card {
