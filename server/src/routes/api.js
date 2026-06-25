@@ -183,6 +183,16 @@ function officialControlSecondAuth(req, res, next) {
   next();
 }
 
+async function recordAuthenticatedUserActivity(req) {
+  const username = req.session?.username;
+  if (!username) return;
+  try {
+    await db.recordUserActivity(username);
+  } catch (error) {
+    console.warn(`[user-activity] record failed for ${username}: ${error?.message || error}`);
+  }
+}
+
 function loginRequired(req, res, next) {
   void (async () => {
     if (!req.session || !req.session.username) {
@@ -203,6 +213,7 @@ function loginRequired(req, res, next) {
       return;
     }
 
+    await recordAuthenticatedUserActivity(req);
     next();
   })().catch(next);
 }
@@ -818,12 +829,35 @@ router.get('/admin/users', userAdminAuth, async (req, res) => {
       pageSize,
     });
 
+    let activitySummary = {
+      online_count: 0,
+      today_active_count: 0,
+      users: {},
+    };
+    let activityUnavailable = false;
+    try {
+      activitySummary = await db.getUserActivitySummary(result.users.map(user => user.username));
+    } catch (error) {
+      activityUnavailable = true;
+      console.warn(`[user-activity] read failed for admin/users: ${error?.message || error}`);
+    }
+
     const users = result.users.map(user => ({
       ...user,
+      is_online: activitySummary.users?.[user.username]?.is_online === true,
+      today_active: activitySummary.users?.[user.username]?.today_active === true,
+      last_active_at: activitySummary.users?.[user.username]?.last_active_at ?? null,
       save_file: getSaveFileSummary(user.username),
     }));
 
-    res.json({ ok: true, ...result, users });
+    res.json({
+      ok: true,
+      ...result,
+      online_count: activitySummary.online_count || 0,
+      today_active_count: activitySummary.today_active_count || 0,
+      activity_unavailable: activityUnavailable || undefined,
+      users,
+    });
   } catch (error) {
     res.status(error.status || 500).json({ ok: false, msg: error.message || '获取用户列表失败' });
   }

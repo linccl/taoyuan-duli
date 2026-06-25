@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { rm } from 'node:fs/promises'
+import { readFile, rm, writeFile } from 'node:fs/promises'
 import net from 'node:net'
 import path from 'node:path'
 import { createRequire } from 'node:module'
@@ -13,6 +13,7 @@ const dotenv = require('dotenv')
 const serverRoot = path.resolve(__dirname, '..')
 const smokeTempDir = path.resolve(serverRoot, '.tmp-online-smoke-run')
 const smokeStorageFile = path.resolve(smokeTempDir, '.storage.json')
+const smokeUserActivityFile = path.resolve(smokeTempDir, 'user_activity.json')
 const host = '127.0.0.1'
 const preferredPort = Number(process.env.TAOYUAN_ONLINE_SMOKE_PORT || 4013)
 const configuredBaseURL = process.env.TAOYUAN_ONLINE_SMOKE_BASE_URL?.trim() || ''
@@ -101,6 +102,7 @@ const fetchJson = async (pathname, init) => {
 const sessionState = createSessionState()
 const secondarySessionState = createSessionState()
 const tertiarySessionState = createSessionState()
+const inactiveSessionState = createSessionState()
 
 const updateCookie = (session, response) => {
   const rawSetCookie = typeof response.headers.getSetCookie === 'function'
@@ -135,6 +137,20 @@ const fetchSessionJson = async (session, pathname, init = {}) => {
 }
 
 const fetchAuthedJson = async (pathname, init = {}) => fetchSessionJson(sessionState, pathname, init)
+
+const readSmokeUserActivity = async () => {
+  const raw = await readFile(smokeUserActivityFile, 'utf8')
+  const parsed = JSON.parse(raw)
+  return parsed?.users && typeof parsed.users === 'object' ? parsed.users : {}
+}
+
+const writeSmokeUserActivity = async users => {
+  await writeFile(smokeUserActivityFile, JSON.stringify({ users }, null, 2), 'utf8')
+}
+
+const normalizeUsernameKey = username => String(username || '').normalize('NFKC').trim().toLocaleLowerCase('zh-CN')
+const todayBJ = () => new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10)
+const yesterdayBJ = () => new Date(Date.now() + 8 * 60 * 60 * 1000 - 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
 const runCheck = async (label, runner) => {
   await runner()
@@ -346,6 +362,26 @@ try {
     assert(data?.user?.username === sessionState.username, 'session username does not match registered user')
     assert(typeof data?.csrf_token === 'string' && data.csrf_token, '/api/me did not return csrf_token')
     sessionState.csrfToken = data.csrf_token
+  })
+
+  let firstActivitySeenAt = 0
+  await runCheck('user_activity created by protected API', async () => {
+    if (configuredBaseURL) return
+    const users = await readSmokeUserActivity()
+    const entry = users[normalizeUsernameKey(sessionState.username)]
+    assert(entry, 'protected API did not create user_activity entry')
+    assert(Number(entry.last_seen_at) > 0, 'user_activity missing last_seen_at')
+    assert(/^\d{4}-\d{2}-\d{2}$/.test(String(entry.last_seen_day || '')), 'user_activity missing YYYY-MM-DD last_seen_day')
+    firstActivitySeenAt = Number(entry.last_seen_at)
+  })
+
+  await runCheck('user_activity write throttle', async () => {
+    if (configuredBaseURL) return
+    const { response, data } = await fetchAuthedJson('/api/me')
+    assert(response.ok && data?.ok === true, 'repeat /api/me for activity throttle failed')
+    const users = await readSmokeUserActivity()
+    const entry = users[normalizeUsernameKey(sessionState.username)]
+    assert(Number(entry?.last_seen_at) === firstActivitySeenAt, 'user_activity was rewritten inside throttle window')
   })
 
   await runCheck('POST /api/taoyuan/save/:slot write path', async () => {
@@ -646,6 +682,101 @@ try {
     })
     assert(response.ok, `admin me returned ${response.status}: ${data?.msg || 'unknown error'}`)
     assert(data?.ok === true && data?.isAdmin === true, 'admin me payload is incomplete')
+  })
+
+  await runCheck('GET /api/admin/users rejects non-admin', async () => {
+    const { response, data } = await fetchJson('/api/admin/users')
+    assert(response.status === 403, `expected 403 from admin/users without admin token, received ${response.status}`)
+    assert(data?.ok === false, 'admin/users without admin token should return ok=false')
+  })
+
+  await runCheck('register inactive user without activity', async () => {
+    const uniqueSeed = Math.random().toString(36).slice(2, 8)
+    inactiveSessionState.username = `smk_inactive_${uniqueSeed}`
+    const { response, data } = await fetchSessionJson(inactiveSessionState, '/api/register', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        username: inactiveSessionState.username,
+        password: `SmokePass_${uniqueSeed}`,
+        display_name: `inactive${uniqueSeed}`,
+      }),
+    })
+    assert(response.ok, `inactive register returned ${response.status}: ${data?.msg || 'unknown error'}`)
+    assert(data?.ok === true, 'inactive register did not return ok=true')
+    inactiveSessionState.csrfToken = data.csrf_token
+  })
+
+  await runCheck('GET /api/admin/users activity fields', async () => {
+    await fetchAuthedJson('/api/me')
+    const { response, data } = await fetchAuthedJson(`/api/admin/users?keyword=${encodeURIComponent(sessionState.username)}&page=1&page_size=5`, {
+      headers: {
+        'X-Admin-Token': adminToken,
+      },
+    })
+    assert(response.ok, `admin/users activity read returned ${response.status}: ${data?.msg || 'unknown error'}`)
+    assert(data?.ok === true && Array.isArray(data?.users), 'admin/users activity payload is incomplete')
+    assert(Number.isInteger(data.online_count) && data.online_count >= 1, 'admin/users missing online_count')
+    assert(Number.isInteger(data.today_active_count) && data.today_active_count >= 1, 'admin/users missing today_active_count')
+    const currentUser = data.users.find(item => item?.username === sessionState.username)
+    assert(currentUser, 'admin/users did not return current user')
+    assert(currentUser.is_online === true, 'current user should be online')
+    assert(currentUser.today_active === true, 'current user should be today_active')
+    assert(Number(currentUser.last_active_at) > 0, 'current user missing last_active_at')
+  })
+
+  await runCheck('GET /api/admin/users old user without activity offline', async () => {
+    const { response, data } = await fetchAuthedJson(`/api/admin/users?keyword=${encodeURIComponent(inactiveSessionState.username)}&page=1&page_size=5`, {
+      headers: {
+        'X-Admin-Token': adminToken,
+      },
+    })
+    assert(response.ok, `admin/users inactive read returned ${response.status}: ${data?.msg || 'unknown error'}`)
+    const inactiveUser = data?.users?.find(item => item?.username === inactiveSessionState.username)
+    assert(inactiveUser, 'admin/users did not return inactive user')
+    assert(inactiveUser.is_online === false, 'inactive user should be offline')
+    assert(inactiveUser.today_active === false, 'inactive user should not be today_active')
+    assert(inactiveUser.last_active_at === null, 'inactive user should have null last_active_at')
+  })
+
+  await runCheck('GET /api/admin/users activity boundary fields', async () => {
+    if (configuredBaseURL) return
+    const users = await readSmokeUserActivity()
+    const key = normalizeUsernameKey(inactiveSessionState.username)
+    const nowSeconds = Math.floor(Date.now() / 1000)
+    users[key] = {
+      last_seen_at: nowSeconds - 301,
+      last_seen_day: todayBJ(),
+    }
+    await writeSmokeUserActivity(users)
+
+    const staleResult = await fetchAuthedJson(`/api/admin/users?keyword=${encodeURIComponent(inactiveSessionState.username)}&page=1&page_size=5`, {
+      headers: {
+        'X-Admin-Token': adminToken,
+      },
+    })
+    const staleUser = staleResult.data?.users?.find(item => item?.username === inactiveSessionState.username)
+    assert(staleResult.response.ok && staleUser, 'admin/users stale activity query failed')
+    assert(staleUser.is_online === false, 'activity older than five minutes should be offline')
+    assert(staleUser.today_active === true, 'same Beijing day activity should be today_active')
+
+    users[key] = {
+      last_seen_at: nowSeconds,
+      last_seen_day: yesterdayBJ(),
+    }
+    await writeSmokeUserActivity(users)
+
+    const yesterdayResult = await fetchAuthedJson(`/api/admin/users?keyword=${encodeURIComponent(inactiveSessionState.username)}&page=1&page_size=5`, {
+      headers: {
+        'X-Admin-Token': adminToken,
+      },
+    })
+    const yesterdayUser = yesterdayResult.data?.users?.find(item => item?.username === inactiveSessionState.username)
+    assert(yesterdayResult.response.ok && yesterdayUser, 'admin/users yesterday activity query failed')
+    assert(yesterdayUser.is_online === true, 'recent activity should be online')
+    assert(yesterdayUser.today_active === false, 'previous Beijing day activity should not be today_active')
   })
 
   await runCheck('GET /api/admin/official-control/runtime-status optional path', async () => {

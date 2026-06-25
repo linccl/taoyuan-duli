@@ -12,6 +12,7 @@ const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const OAUTH_IDENTITIES_FILE = path.join(DATA_DIR, 'oauth_identities.json');
 const OAUTH_PENDING_PREFIX = 'oauth_identity_pending_';
 const USER_META_FILE = path.join(DATA_DIR, 'user_admin_meta.json');
+const USER_ACTIVITY_FILE = path.join(DATA_DIR, 'user_activity.json');
 const ADMIN_AUDIT_LOG_FILE = path.join(DATA_DIR, 'admin_audit_logs.json');
 const CONTENT_REVISION_LOG_FILE = path.join(DATA_DIR, 'admin_content_revisions.json');
 const GAMEPLAY_EVENT_LOG_FILE = path.join(DATA_DIR, 'taoyuan_gameplay_event_logs.json');
@@ -20,11 +21,14 @@ const DEFAULT_USER_QUOTA = parseInt(process.env.DEFAULT_USER_QUOTA || '2000000',
 
 const MYSQL_ENABLED = Boolean(process.env.MYSQL_HOST && process.env.MYSQL_USER && process.env.MYSQL_DATABASE);
 const MYSQL_PORT = parseInt(process.env.MYSQL_PORT || '3306', 10);
+const USER_ACTIVITY_THROTTLE_SECONDS = 60;
+const USER_ONLINE_WINDOW_SECONDS = 5 * 60;
 
 let mysqlPool = null;
 let mysqlReadyPromise = null;
 let lastMysqlFallbackLogAt = 0;
 const qaFailedOAuthIdentityWriteSubjects = new Set();
+const userActivityWriteCache = new Map();
 
 function logMysqlFallback(scope, error) {
   const now = Date.now();
@@ -158,6 +162,10 @@ function nowSeconds() {
   return Math.floor(Date.now() / 1000);
 }
 
+function todayBJ() {
+  return new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
 function normalizeAdminStatus(status) {
   const normalized = String(status || 'active').trim().toLowerCase();
   return ['active', 'banned', 'deleted'].includes(normalized) ? normalized : 'active';
@@ -172,6 +180,44 @@ function loadUserMetaStore() {
 
 function saveUserMetaStore(store) {
   writeJsonFileAtomic(USER_META_FILE, { users: store?.users || {} });
+}
+
+function loadUserActivityStore() {
+  const raw = readJsonStoreStrict(USER_ACTIVITY_FILE);
+  if (raw === null) return { users: {} };
+  if (!raw || !raw.users || typeof raw.users !== 'object') throw createStoreCorruptionError(USER_ACTIVITY_FILE);
+  return raw;
+}
+
+function saveUserActivityStore(store) {
+  writeJsonFileAtomic(USER_ACTIVITY_FILE, { users: store?.users || {} });
+}
+
+function normalizeUserActivityEntry(entry) {
+  const lastSeenAt = Number(entry?.last_seen_at) || 0;
+  const lastSeenDay = String(entry?.last_seen_day || '').trim();
+  return {
+    last_seen_at: lastSeenAt > 0 ? lastSeenAt : null,
+    last_seen_day: /^\d{4}-\d{2}-\d{2}$/.test(lastSeenDay) ? lastSeenDay : '',
+  };
+}
+
+function createEmptyActivityFields() {
+  return {
+    is_online: false,
+    today_active: false,
+    last_active_at: null,
+  };
+}
+
+function buildActivityFields(entry, now = nowSeconds(), day = todayBJ()) {
+  const normalized = normalizeUserActivityEntry(entry);
+  if (!normalized.last_seen_at) return createEmptyActivityFields();
+  return {
+    is_online: normalized.last_seen_at >= now - USER_ONLINE_WINDOW_SECONDS,
+    today_active: normalized.last_seen_day === day,
+    last_active_at: normalized.last_seen_at,
+  };
 }
 
 function getLocalUserMeta(usernameKey) {
@@ -200,6 +246,111 @@ function setLocalUserMeta(usernameKey, patch = {}) {
   store.users[usernameKey] = next;
   saveUserMetaStore(store);
   return next;
+}
+
+async function recordUserActivity(username) {
+  const usernameKey = normalizeUsernameKey(username);
+  if (!usernameKey) return { updated: false, skipped: true };
+
+  const now = nowSeconds();
+  const lastWrittenAt = userActivityWriteCache.get(usernameKey) || 0;
+  if (now - lastWrittenAt < USER_ACTIVITY_THROTTLE_SECONDS) {
+    return { updated: false, throttled: true };
+  }
+
+  const entry = {
+    last_seen_at: now,
+    last_seen_day: todayBJ(),
+  };
+
+  if (MYSQL_ENABLED) {
+    try {
+      await ensureMysqlReady();
+      await buildMysqlPool().execute(
+        `INSERT INTO user_activity (username_key, last_seen_at, last_seen_day)
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE last_seen_at = VALUES(last_seen_at), last_seen_day = VALUES(last_seen_day)`,
+        [usernameKey, entry.last_seen_at, entry.last_seen_day]
+      );
+      userActivityWriteCache.set(usernameKey, now);
+      return { updated: true };
+    } catch (error) {
+      logMysqlFallback('recordUserActivity', error);
+    }
+  }
+
+  const store = loadUserActivityStore();
+  if (!store.users || typeof store.users !== 'object') store.users = {};
+  store.users[usernameKey] = entry;
+  saveUserActivityStore(store);
+  userActivityWriteCache.set(usernameKey, now);
+  return { updated: true };
+}
+
+async function getUserActivitySummary(usernames = []) {
+  const now = nowSeconds();
+  const day = todayBJ();
+  const onlineSince = now - USER_ONLINE_WINDOW_SECONDS;
+  const requested = Array.from(new Set(
+    usernames
+      .map(username => String(username || ''))
+      .filter(Boolean)
+  )).map(username => ({ username, usernameKey: normalizeUsernameKey(username) }));
+
+  if (MYSQL_ENABLED) {
+    await ensureMysqlReady();
+    const pool = buildMysqlPool();
+    const [[onlineRow]] = await pool.execute(
+      'SELECT COUNT(*) AS total FROM user_activity WHERE last_seen_at >= ?',
+      [onlineSince]
+    );
+    const [[todayRow]] = await pool.execute(
+      'SELECT COUNT(*) AS total FROM user_activity WHERE last_seen_day = ?',
+      [day]
+    );
+
+    const activityByKey = {};
+    const keys = requested.map(item => item.usernameKey).filter(Boolean);
+    if (keys.length > 0) {
+      const placeholders = keys.map(() => '?').join(',');
+      const [rows] = await pool.execute(
+        `SELECT username_key, last_seen_at, last_seen_day FROM user_activity WHERE username_key IN (${placeholders})`,
+        keys
+      );
+      for (const row of rows) {
+        activityByKey[row.username_key] = normalizeUserActivityEntry(row);
+      }
+    }
+
+    return {
+      online_count: Number(onlineRow?.total) || 0,
+      today_active_count: Number(todayRow?.total) || 0,
+      users: Object.fromEntries(requested.map(item => [
+        item.username,
+        buildActivityFields(activityByKey[item.usernameKey], now, day),
+      ])),
+    };
+  }
+
+  const store = loadUserActivityStore();
+  const entries = store.users && typeof store.users === 'object' ? store.users : {};
+  let onlineCount = 0;
+  let todayActiveCount = 0;
+
+  for (const entry of Object.values(entries)) {
+    const normalized = normalizeUserActivityEntry(entry);
+    if (normalized.last_seen_at && normalized.last_seen_at >= onlineSince) onlineCount += 1;
+    if (normalized.last_seen_day === day) todayActiveCount += 1;
+  }
+
+  return {
+    online_count: onlineCount,
+    today_active_count: todayActiveCount,
+    users: Object.fromEntries(requested.map(item => [
+      item.username,
+      buildActivityFields(entries[item.usernameKey], now, day),
+    ])),
+  };
 }
 
 function loadAdminAuditLogStore() {
@@ -411,6 +562,17 @@ async function ensureMysqlReady() {
           banned_at BIGINT NULL DEFAULT NULL,
           updated_at BIGINT NOT NULL,
           PRIMARY KEY (username_key)
+        ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+      `);
+
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS user_activity (
+          username_key VARCHAR(191) NOT NULL,
+          last_seen_at BIGINT NOT NULL,
+          last_seen_day CHAR(10) NOT NULL,
+          PRIMARY KEY (username_key),
+          KEY idx_last_seen_at (last_seen_at),
+          KEY idx_last_seen_day (last_seen_day)
         ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
       `);
 
@@ -1872,6 +2034,8 @@ module.exports = {
   getContentRevision,
   recordGameplayEventLog,
   listGameplayEventLogs,
+  recordUserActivity,
+  getUserActivitySummary,
   getUserAccessState,
   findOAuthIdentity,
   loginWithOAuthIdentity,
