@@ -315,9 +315,9 @@ export const useSettingsStore = defineStore('settings', () => {
     const { sfxEnabled, bgmEnabled } = useAudio()
     return {
       fontSize: fontSize.value,
-      fontColor: fontColor.value,
+      fontColor: normalizeFontColor(fontColor.value),
       fontCustomColor: normalizeHexColor(fontCustomColor.value) ?? DEFAULT_FONT_CUSTOM_COLOR,
-      mutedColor: mutedColor.value,
+      mutedColor: normalizeMutedColor(mutedColor.value),
       mutedCustomColor: normalizeHexColor(mutedCustomColor.value) ?? DEFAULT_MUTED_CUSTOM_COLOR,
       fontWeight: fontWeight.value,
       sfxEnabled: sfxEnabled.value,
