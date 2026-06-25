@@ -66,7 +66,7 @@ const DEFAULT_MUTED_CUSTOM_COLOR = '#6b7280'
 const DEFAULT_FONT_WEIGHT: FontWeightValue = 400
 const DEFAULT_THEME: ThemeKey = 'dark'
 const DEFAULT_QMSG_POSITION: QmsgPosition = 'top'
-const HEX_COLOR_PATTERN = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/
+const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/
 const THEME_MUTED_COLOR_MAP: Record<ThemeKey, string> = {
   dark: '#6b7280',
   warm: '#a09686',
@@ -79,11 +79,7 @@ const normalizeHexColor = (value: unknown): string | null => {
   if (typeof value !== 'string') return null
   const trimmed = value.trim()
   if (!HEX_COLOR_PATTERN.test(trimmed)) return null
-  const body = trimmed.slice(1)
-  if (body.length === 3) {
-    return `#${body.split('').map(char => `${char}${char}`).join('')}`.toLowerCase()
-  }
-  return `#${body}`.toLowerCase()
+  return trimmed.toLowerCase()
 }
 const isFontColorKey = (value: unknown): value is FontColorKey =>
   typeof value === 'string' && FONT_COLOR_OPTIONS.some(option => option.value === value)
