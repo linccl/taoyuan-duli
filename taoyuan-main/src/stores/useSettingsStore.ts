@@ -13,13 +13,82 @@ export type QmsgLimitWidthWrap = 'no-wrap' | 'wrap' | 'ellipsis'
 export const DEFAULT_FONT_SIZE = 16
 export const MIN_FONT_SIZE = 8
 export const MAX_FONT_SIZE = 24
+export type FontColorKey = 'theme' | 'cream' | 'ink' | 'gold' | 'jade'
+export type FontWeightValue = 400 | 500 | 600 | 700
+
+export interface FontColorOption {
+  value: FontColorKey
+  label: string
+  hex: string | null
+}
+
+export interface FontWeightOption {
+  value: FontWeightValue
+  label: string
+}
+
+export const FONT_COLOR_OPTIONS: FontColorOption[] = [
+  { value: 'theme', label: '随主题', hex: null },
+  { value: 'cream', label: '米白', hex: '#e8e4d9' },
+  { value: 'ink', label: '墨黑', hex: '#2c2c2c' },
+  { value: 'gold', label: '金色', hex: '#c8a45c' },
+  { value: 'jade', label: '青绿', hex: '#7fb08a' }
+]
+
+export const FONT_WEIGHT_OPTIONS: FontWeightOption[] = [
+  { value: 400, label: '常规' },
+  { value: 500, label: '中等' },
+  { value: 600, label: '半粗' },
+  { value: 700, label: '粗体' }
+]
+
+const DEFAULT_FONT_COLOR: FontColorKey = 'theme'
+const DEFAULT_FONT_WEIGHT: FontWeightValue = 400
 const DEFAULT_THEME: ThemeKey = 'dark'
 const DEFAULT_QMSG_POSITION: QmsgPosition = 'top'
+const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/
 
 const clampFontSize = (value: number) => Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, Math.round(value)))
+const isFontColorKey = (value: unknown): value is FontColorKey =>
+  typeof value === 'string' && FONT_COLOR_OPTIONS.some(option => option.value === value)
+const normalizeFontColor = (value: unknown): FontColorKey => (isFontColorKey(value) ? value : DEFAULT_FONT_COLOR)
+const getFontColorHex = (value: FontColorKey): string | null => {
+  const option = FONT_COLOR_OPTIONS.find(item => item.value === value)
+  if (!option?.hex) return null
+  return HEX_COLOR_PATTERN.test(option.hex) ? option.hex : null
+}
+const normalizeFontWeight = (value: unknown): FontWeightValue => {
+  const numeric = typeof value === 'number' ? value : Number(value)
+  return FONT_WEIGHT_OPTIONS.some(option => option.value === numeric) ? (numeric as FontWeightValue) : DEFAULT_FONT_WEIGHT
+}
+
+interface SerializedSettingsState {
+  fontSize: number
+  fontColor: FontColorKey
+  fontWeight: FontWeightValue
+  sfxEnabled: boolean
+  bgmEnabled: boolean
+  theme: ThemeKey
+  qmsgPosition: QmsgPosition
+  qmsgTimeout: number
+  qmsgMaxNums: number
+  qmsgIsLimitWidth: boolean
+  qmsgLimitWidthNum: number
+  qmsgLimitWidthWrap: QmsgLimitWidthWrap
+  qmsgAnimation: boolean
+  qmsgAutoClose: boolean
+  qmsgShowClose: boolean
+  qmsgShowIcon: boolean
+  qmsgShowReverse: boolean
+  inventoryFilter: ItemCategory[]
+  lateGameFeatureOverrides: LateGameFeatureOverrideMap
+  lateGameBalanceOverrides: LateGameBalanceOverride
+}
 
 export const useSettingsStore = defineStore('settings', () => {
   const fontSize = ref(DEFAULT_FONT_SIZE)
+  const fontColor = ref<FontColorKey>(DEFAULT_FONT_COLOR)
+  const fontWeight = ref<FontWeightValue>(DEFAULT_FONT_WEIGHT)
   const theme = ref<ThemeKey>(DEFAULT_THEME)
   const qmsgPosition = ref<QmsgPosition>(DEFAULT_QMSG_POSITION)
   const qmsgTimeout = ref(2500)
@@ -44,16 +113,37 @@ export const useSettingsStore = defineStore('settings', () => {
     document.documentElement.style.fontSize = `${fontSize.value}px`
   }
 
+  const applyFontColor = () => {
+    fontColor.value = normalizeFontColor(fontColor.value)
+    const themeText = getThemeByKey(theme.value).text
+    document.documentElement.style.setProperty('--color-text', hexToRgb(getFontColorHex(fontColor.value) ?? themeText))
+  }
+
+  const applyFontWeight = () => {
+    fontWeight.value = normalizeFontWeight(fontWeight.value)
+    document.documentElement.style.setProperty('--font-weight-game', String(fontWeight.value))
+  }
+
   const applyTheme = () => {
     const t = getThemeByKey(theme.value)
     document.documentElement.style.setProperty('--color-bg', hexToRgb(t.bg))
     document.documentElement.style.setProperty('--color-panel', hexToRgb(t.panel))
-    document.documentElement.style.setProperty('--color-text', hexToRgb(t.text))
+    applyFontColor()
   }
 
   const changeFontSize = (delta: number) => {
     fontSize.value = clampFontSize(fontSize.value + delta)
     applyFontSize()
+  }
+
+  const changeFontColor = (value: FontColorKey) => {
+    fontColor.value = normalizeFontColor(value)
+    applyFontColor()
+  }
+
+  const changeFontWeight = (value: FontWeightValue) => {
+    fontWeight.value = normalizeFontWeight(value)
+    applyFontWeight()
   }
 
   const changeTheme = (key: ThemeKey) => {
@@ -141,6 +231,8 @@ export const useSettingsStore = defineStore('settings', () => {
     const { sfxEnabled, bgmEnabled } = useAudio()
     return {
       fontSize: fontSize.value,
+      fontColor: fontColor.value,
+      fontWeight: fontWeight.value,
       sfxEnabled: sfxEnabled.value,
       bgmEnabled: bgmEnabled.value,
       theme: theme.value,
@@ -161,10 +253,13 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  const deserialize = (data: any, saveVersion?: number) => {
+  const deserialize = (data?: Partial<SerializedSettingsState> | null, saveVersion?: number) => {
     setLateGameFeatureBaselineSaveVersion(saveVersion)
     fontSize.value = clampFontSize(data?.fontSize ?? DEFAULT_FONT_SIZE)
     applyFontSize()
+    fontColor.value = normalizeFontColor(data?.fontColor)
+    fontWeight.value = normalizeFontWeight(data?.fontWeight)
+    applyFontWeight()
     theme.value = data?.theme ?? DEFAULT_THEME
     applyTheme()
     qmsgPosition.value = data?.qmsgPosition ?? DEFAULT_QMSG_POSITION
@@ -199,10 +294,13 @@ export const useSettingsStore = defineStore('settings', () => {
   // 初始化时立即同步到 Qmsg，确保新游戏/首次加载也能生效
   syncQmsgConfig()
   applyFontSize()
+  applyFontWeight()
   applyTheme()
 
   return {
     fontSize,
+    fontColor,
+    fontWeight,
     theme,
     qmsgPosition,
     qmsgTimeout,
@@ -221,6 +319,8 @@ export const useSettingsStore = defineStore('settings', () => {
     lateGameBalanceOverrides,
     lateGameFeatureConfigs: LATE_GAME_FEATURE_FLAGS,
     changeFontSize,
+    changeFontColor,
+    changeFontWeight,
     changeTheme,
     changeQmsgPosition,
     syncQmsgConfig,
@@ -235,6 +335,8 @@ export const useSettingsStore = defineStore('settings', () => {
     setLateGameBalanceOverrides,
     clearLateGameBalanceOverrides,
     applyFontSize,
+    applyFontColor,
+    applyFontWeight,
     applyTheme,
     serialize,
     deserialize
