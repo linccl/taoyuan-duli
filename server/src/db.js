@@ -461,6 +461,17 @@ async function ensureMysqlReady() {
       `);
 
       await pool.query(`
+        CREATE TABLE IF NOT EXISTS user_activity (
+          username_key VARCHAR(191) NOT NULL,
+          last_seen_at BIGINT NOT NULL,
+          last_seen_day CHAR(10) NOT NULL,
+          PRIMARY KEY (username_key),
+          KEY idx_last_seen_at (last_seen_at),
+          KEY idx_last_seen_day (last_seen_day)
+        ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+      `);
+
+      await pool.query(`
         CREATE TABLE IF NOT EXISTS user_oauth_identities (
           id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
           provider VARCHAR(32) NOT NULL,
