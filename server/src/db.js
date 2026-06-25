@@ -248,6 +248,111 @@ function setLocalUserMeta(usernameKey, patch = {}) {
   return next;
 }
 
+async function recordUserActivity(username) {
+  const usernameKey = normalizeUsernameKey(username);
+  if (!usernameKey) return { updated: false, skipped: true };
+
+  const now = nowSeconds();
+  const lastWrittenAt = userActivityWriteCache.get(usernameKey) || 0;
+  if (now - lastWrittenAt < USER_ACTIVITY_THROTTLE_SECONDS) {
+    return { updated: false, throttled: true };
+  }
+
+  const entry = {
+    last_seen_at: now,
+    last_seen_day: todayBJ(),
+  };
+
+  if (MYSQL_ENABLED) {
+    try {
+      await ensureMysqlReady();
+      await buildMysqlPool().execute(
+        `INSERT INTO user_activity (username_key, last_seen_at, last_seen_day)
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE last_seen_at = VALUES(last_seen_at), last_seen_day = VALUES(last_seen_day)`,
+        [usernameKey, entry.last_seen_at, entry.last_seen_day]
+      );
+      userActivityWriteCache.set(usernameKey, now);
+      return { updated: true };
+    } catch (error) {
+      logMysqlFallback('recordUserActivity', error);
+    }
+  }
+
+  const store = loadUserActivityStore();
+  if (!store.users || typeof store.users !== 'object') store.users = {};
+  store.users[usernameKey] = entry;
+  saveUserActivityStore(store);
+  userActivityWriteCache.set(usernameKey, now);
+  return { updated: true };
+}
+
+async function getUserActivitySummary(usernames = []) {
+  const now = nowSeconds();
+  const day = todayBJ();
+  const onlineSince = now - USER_ONLINE_WINDOW_SECONDS;
+  const requested = Array.from(new Set(
+    usernames
+      .map(username => String(username || ''))
+      .filter(Boolean)
+  )).map(username => ({ username, usernameKey: normalizeUsernameKey(username) }));
+
+  if (MYSQL_ENABLED) {
+    await ensureMysqlReady();
+    const pool = buildMysqlPool();
+    const [[onlineRow]] = await pool.execute(
+      'SELECT COUNT(*) AS total FROM user_activity WHERE last_seen_at >= ?',
+      [onlineSince]
+    );
+    const [[todayRow]] = await pool.execute(
+      'SELECT COUNT(*) AS total FROM user_activity WHERE last_seen_day = ?',
+      [day]
+    );
+
+    const activityByKey = {};
+    const keys = requested.map(item => item.usernameKey).filter(Boolean);
+    if (keys.length > 0) {
+      const placeholders = keys.map(() => '?').join(',');
+      const [rows] = await pool.execute(
+        `SELECT username_key, last_seen_at, last_seen_day FROM user_activity WHERE username_key IN (${placeholders})`,
+        keys
+      );
+      for (const row of rows) {
+        activityByKey[row.username_key] = normalizeUserActivityEntry(row);
+      }
+    }
+
+    return {
+      online_count: Number(onlineRow?.total) || 0,
+      today_active_count: Number(todayRow?.total) || 0,
+      users: Object.fromEntries(requested.map(item => [
+        item.username,
+        buildActivityFields(activityByKey[item.usernameKey], now, day),
+      ])),
+    };
+  }
+
+  const store = loadUserActivityStore();
+  const entries = store.users && typeof store.users === 'object' ? store.users : {};
+  let onlineCount = 0;
+  let todayActiveCount = 0;
+
+  for (const entry of Object.values(entries)) {
+    const normalized = normalizeUserActivityEntry(entry);
+    if (normalized.last_seen_at && normalized.last_seen_at >= onlineSince) onlineCount += 1;
+    if (normalized.last_seen_day === day) todayActiveCount += 1;
+  }
+
+  return {
+    online_count: onlineCount,
+    today_active_count: todayActiveCount,
+    users: Object.fromEntries(requested.map(item => [
+      item.username,
+      buildActivityFields(entries[item.usernameKey], now, day),
+    ])),
+  };
+}
+
 function loadAdminAuditLogStore() {
   ensureDir();
   try {
@@ -1929,6 +2034,8 @@ module.exports = {
   getContentRevision,
   recordGameplayEventLog,
   listGameplayEventLogs,
+  recordUserActivity,
+  getUserActivitySummary,
   getUserAccessState,
   findOAuthIdentity,
   loginWithOAuthIdentity,
