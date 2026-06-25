@@ -55,6 +55,12 @@ export interface UserSaveFileSummary {
   slots: UserSaveSlotSummary[]
 }
 
+interface UserActivityFields {
+  is_online: boolean
+  today_active: boolean
+  last_active_at: number | null
+}
+
 export interface UserAdminSummary {
   username: string
   display_name: string
@@ -64,6 +70,9 @@ export interface UserAdminSummary {
   banned_at: number | null
   deleted_at: number | null
   save_file: UserSaveFileSummary
+  is_online: boolean
+  today_active: boolean
+  last_active_at: number | null
 }
 
 export interface UserAdminDetail {
@@ -75,12 +84,18 @@ export interface UserAdminDetail {
   banned_at: number | null
   deleted_at: number | null
   save_file: UserSaveFileSummary
+  is_online: boolean
+  today_active: boolean
+  last_active_at: number | null
 }
 
 export interface UserAdminListResult {
   total: number
   page: number
   pageSize: number
+  online_count: number
+  today_active_count: number
+  activity_unavailable: boolean
   users: UserAdminSummary[]
 }
 
@@ -114,6 +129,26 @@ const ensureAdminToken = (tokenOverride?: string) => {
   if (!token) throw new Error('请先填写管理员口令')
   return token
 }
+
+type UserAdminSummaryPayload = Omit<UserAdminSummary, keyof UserActivityFields> & Partial<UserActivityFields>
+type UserAdminDetailPayload = Omit<UserAdminDetail, keyof UserActivityFields> & Partial<UserActivityFields>
+
+const normalizeCount = (value: unknown) => {
+  const count = Number(value)
+  return Number.isFinite(count) && count > 0 ? count : 0
+}
+
+const normalizeActivityTime = (value: unknown) => {
+  const timestamp = Number(value)
+  return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : null
+}
+
+const normalizeAdminUser = <T extends UserAdminSummaryPayload | UserAdminDetailPayload>(user: T): T & UserActivityFields => ({
+  ...user,
+  is_online: user.is_online === true,
+  today_active: user.today_active === true,
+  last_active_at: normalizeActivityTime(user.last_active_at),
+})
 
 const withAdminHeaders = (token: string, init?: RequestInit): RequestInit => ({
   credentials: 'include',
@@ -184,23 +219,35 @@ export const fetchAdminUsers = async (
   if (params.status && params.status !== 'all') search.set('status', params.status)
   search.set('page', String(params.page || 1))
   search.set('page_size', String(params.pageSize || 20))
-  const data = await adminRequest<UserAdminListResult>(`/api/admin/users?${search.toString()}`, undefined, tokenOverride)
+  const data = await adminRequest<{
+    total?: unknown
+    page?: unknown
+    pageSize?: unknown
+    page_size?: unknown
+    online_count?: unknown
+    today_active_count?: unknown
+    activity_unavailable?: unknown
+    users?: UserAdminSummaryPayload[]
+  }>(`/api/admin/users?${search.toString()}`, undefined, tokenOverride)
   return {
     total: Number(data.total) || 0,
     page: Number(data.page) || 1,
-    pageSize: Number((data as UserAdminListResult & { page_size?: number }).pageSize || (data as UserAdminListResult & { page_size?: number }).page_size) || params.pageSize || 20,
-    users: Array.isArray(data.users) ? data.users : [],
+    pageSize: Number(data.pageSize || data.page_size) || params.pageSize || 20,
+    online_count: normalizeCount(data.online_count),
+    today_active_count: normalizeCount(data.today_active_count),
+    activity_unavailable: data.activity_unavailable === true,
+    users: Array.isArray(data.users) ? data.users.map(user => normalizeAdminUser(user)) : [],
   }
 }
 
 export const fetchAdminUserDetail = async (username: string, tokenOverride?: string): Promise<UserAdminDetail> => {
-  const data = await adminRequest<{ user: UserAdminDetail }>(`/api/admin/users/${encodeURIComponent(username)}`, undefined, tokenOverride)
+  const data = await adminRequest<{ user?: UserAdminDetailPayload }>(`/api/admin/users/${encodeURIComponent(username)}`, undefined, tokenOverride)
   if (!data.user) throw new Error('用户详情不存在')
-  return data.user
+  return normalizeAdminUser(data.user)
 }
 
 export const updateAdminUserQuota = async (username: string, quota: number, tokenOverride?: string): Promise<UserAdminDetail> => {
-  const data = await adminRequest<{ user: UserAdminDetail }>(
+  const data = await adminRequest<{ user?: UserAdminDetailPayload }>(
     `/api/admin/users/${encodeURIComponent(username)}/quota`,
     {
       method: 'POST',
@@ -209,7 +256,7 @@ export const updateAdminUserQuota = async (username: string, quota: number, toke
     tokenOverride,
   )
   if (!data.user) throw new Error('额度更新结果缺失')
-  return data.user
+  return normalizeAdminUser(data.user)
 }
 
 export const resetAdminUserPassword = async (username: string, newPassword: string, tokenOverride?: string): Promise<void> => {
@@ -224,7 +271,7 @@ export const resetAdminUserPassword = async (username: string, newPassword: stri
 }
 
 export const setAdminUserStatus = async (username: string, status: UserAdminStatus, tokenOverride?: string): Promise<UserAdminDetail> => {
-  const data = await adminRequest<{ user: UserAdminDetail }>(
+  const data = await adminRequest<{ user?: UserAdminDetailPayload }>(
     `/api/admin/users/${encodeURIComponent(username)}/status`,
     {
       method: 'POST',
@@ -233,17 +280,17 @@ export const setAdminUserStatus = async (username: string, status: UserAdminStat
     tokenOverride,
   )
   if (!data.user) throw new Error('状态更新结果缺失')
-  return data.user
+  return normalizeAdminUser(data.user)
 }
 
 export const deleteAdminUser = async (username: string, tokenOverride?: string): Promise<UserAdminDetail> => {
-  const data = await adminRequest<{ user: UserAdminDetail }>(
+  const data = await adminRequest<{ user?: UserAdminDetailPayload }>(
     `/api/admin/users/${encodeURIComponent(username)}`,
     { method: 'DELETE' },
     tokenOverride,
   )
   if (!data.user) throw new Error('删除结果缺失')
-  return data.user
+  return normalizeAdminUser(data.user)
 }
 
 export const fetchAdminUserSave = async (username: string, tokenOverride?: string): Promise<UserSaveFileSummary> => {
