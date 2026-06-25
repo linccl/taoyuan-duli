@@ -574,7 +574,7 @@
   const mutedCustomError = ref('')
   let clipboard: ClipboardJS | null = null
 
-  const HEX_COLOR_INPUT_PATTERN = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/
+  const HEX_COLOR_INPUT_PATTERN = /^#[0-9a-fA-F]{6}$/
 
   onMounted(() => {
     clipboard = new ClipboardJS('.webdav-log-copy', {
@@ -637,18 +637,18 @@
 
   const applyFontCustomColor = () => {
     if (!isHexColorInput(fontCustomInput.value)) {
-      fontCustomError.value = '请输入 #RGB 或 #RRGGBB'
+      fontCustomError.value = '请输入 #RRGGBB'
       return
     }
-    fontCustomError.value = settingsStore.changeFontCustomColor(fontCustomInput.value) ? '' : '请输入 #RGB 或 #RRGGBB'
+    fontCustomError.value = settingsStore.changeFontCustomColor(fontCustomInput.value) ? '' : '请输入 #RRGGBB'
   }
 
   const applyMutedCustomColor = () => {
     if (!isHexColorInput(mutedCustomInput.value)) {
-      mutedCustomError.value = '请输入 #RGB 或 #RRGGBB'
+      mutedCustomError.value = '请输入 #RRGGBB'
       return
     }
-    mutedCustomError.value = settingsStore.changeMutedCustomColor(mutedCustomInput.value) ? '' : '请输入 #RGB 或 #RRGGBB'
+    mutedCustomError.value = settingsStore.changeMutedCustomColor(mutedCustomInput.value) ? '' : '请输入 #RRGGBB'
   }
 
   watch(() => settingsStore.fontCustomColor, value => {
