@@ -358,6 +358,26 @@ try {
     sessionState.csrfToken = data.csrf_token
   })
 
+  let firstActivitySeenAt = 0
+  await runCheck('user_activity created by protected API', async () => {
+    if (configuredBaseURL) return
+    const users = await readSmokeUserActivity()
+    const entry = users[normalizeUsernameKey(sessionState.username)]
+    assert(entry, 'protected API did not create user_activity entry')
+    assert(Number(entry.last_seen_at) > 0, 'user_activity missing last_seen_at')
+    assert(/^\d{4}-\d{2}-\d{2}$/.test(String(entry.last_seen_day || '')), 'user_activity missing YYYY-MM-DD last_seen_day')
+    firstActivitySeenAt = Number(entry.last_seen_at)
+  })
+
+  await runCheck('user_activity write throttle', async () => {
+    if (configuredBaseURL) return
+    const { response, data } = await fetchAuthedJson('/api/me')
+    assert(response.ok && data?.ok === true, 'repeat /api/me for activity throttle failed')
+    const users = await readSmokeUserActivity()
+    const entry = users[normalizeUsernameKey(sessionState.username)]
+    assert(Number(entry?.last_seen_at) === firstActivitySeenAt, 'user_activity was rewritten inside throttle window')
+  })
+
   await runCheck('POST /api/taoyuan/save/:slot write path', async () => {
     const { response, data } = await fetchAuthedJson('/api/taoyuan/save/0')
     assert(response.ok, `save readback returned ${response.status}`)
