@@ -741,6 +741,44 @@ try {
     assert(inactiveUser.last_active_at === null, 'inactive user should have null last_active_at')
   })
 
+  await runCheck('GET /api/admin/users activity boundary fields', async () => {
+    if (configuredBaseURL) return
+    const users = await readSmokeUserActivity()
+    const key = normalizeUsernameKey(inactiveSessionState.username)
+    const nowSeconds = Math.floor(Date.now() / 1000)
+    users[key] = {
+      last_seen_at: nowSeconds - 301,
+      last_seen_day: todayBJ(),
+    }
+    await writeSmokeUserActivity(users)
+
+    const staleResult = await fetchAuthedJson(`/api/admin/users?keyword=${encodeURIComponent(inactiveSessionState.username)}&page=1&page_size=5`, {
+      headers: {
+        'X-Admin-Token': adminToken,
+      },
+    })
+    const staleUser = staleResult.data?.users?.find(item => item?.username === inactiveSessionState.username)
+    assert(staleResult.response.ok && staleUser, 'admin/users stale activity query failed')
+    assert(staleUser.is_online === false, 'activity older than five minutes should be offline')
+    assert(staleUser.today_active === true, 'same Beijing day activity should be today_active')
+
+    users[key] = {
+      last_seen_at: nowSeconds,
+      last_seen_day: yesterdayBJ(),
+    }
+    await writeSmokeUserActivity(users)
+
+    const yesterdayResult = await fetchAuthedJson(`/api/admin/users?keyword=${encodeURIComponent(inactiveSessionState.username)}&page=1&page_size=5`, {
+      headers: {
+        'X-Admin-Token': adminToken,
+      },
+    })
+    const yesterdayUser = yesterdayResult.data?.users?.find(item => item?.username === inactiveSessionState.username)
+    assert(yesterdayResult.response.ok && yesterdayUser, 'admin/users yesterday activity query failed')
+    assert(yesterdayUser.is_online === true, 'recent activity should be online')
+    assert(yesterdayUser.today_active === false, 'previous Beijing day activity should not be today_active')
+  })
+
   await runCheck('GET /api/admin/official-control/runtime-status optional path', async () => {
     if (!adminToken) return
     const { response, data } = await fetchAuthedJson('/api/admin/official-control/runtime-status', {
