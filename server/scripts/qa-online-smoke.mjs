@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { readFile, rm } from 'node:fs/promises'
+import { readFile, rm, writeFile } from 'node:fs/promises'
 import net from 'node:net'
 import path from 'node:path'
 import { createRequire } from 'node:module'
@@ -144,7 +144,13 @@ const readSmokeUserActivity = async () => {
   return parsed?.users && typeof parsed.users === 'object' ? parsed.users : {}
 }
 
+const writeSmokeUserActivity = async users => {
+  await writeFile(smokeUserActivityFile, JSON.stringify({ users }, null, 2), 'utf8')
+}
+
 const normalizeUsernameKey = username => String(username || '').normalize('NFKC').trim().toLocaleLowerCase('zh-CN')
+const todayBJ = () => new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10)
+const yesterdayBJ = () => new Date(Date.now() + 8 * 60 * 60 * 1000 - 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
 const runCheck = async (label, runner) => {
   await runner()
