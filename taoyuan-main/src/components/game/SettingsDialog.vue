@@ -190,7 +190,7 @@
               <!-- 字体颜色 -->
               <div class="settings-dialog-card border border-accent/20 rounded-xs mr-1" data-testid="settings-font-color-card">
                 <p class="text-xs text-muted mb-2">字体颜色</p>
-                <div class="settings-option-grid grid grid-cols-5 gap-2">
+                <div class="settings-option-grid grid grid-cols-3 gap-2">
                   <button
                     v-for="option in FONT_COLOR_OPTIONS"
                     :key="option.value"
@@ -202,10 +202,60 @@
                   >
                     <span
                       class="settings-color-dot border border-accent/30 rounded-full"
-                      :style="{ backgroundColor: getFontColorPreview(option.hex) }"
+                      :style="{ backgroundColor: getFontColorPreview(option.value, option.hex) }"
                     />
                     <span class="settings-option-label text-[10px] text-muted">{{ option.label }}</span>
                   </button>
+                </div>
+                <div class="settings-color-custom-row mt-2">
+                  <label class="text-[10px] text-muted mb-1 block">自定义正文色</label>
+                  <input
+                    v-model="fontCustomInput"
+                    class="settings-color-input w-full px-2 py-1.5 bg-bg border rounded-xs text-xs text-text focus:border-accent outline-none placeholder:text-muted/40 transition-colors"
+                    :class="fontCustomError ? 'border-danger' : 'border-accent/30'"
+                    placeholder="#e8e4d9"
+                    spellcheck="false"
+                    data-testid="settings-font-color-custom-input"
+                    @input="applyFontCustomColor"
+                    @change="applyFontCustomColor"
+                  />
+                  <p v-if="fontCustomError" class="text-[10px] text-danger mt-1">{{ fontCustomError }}</p>
+                </div>
+              </div>
+
+              <!-- 辅助说明颜色 -->
+              <div class="settings-dialog-card border border-accent/20 rounded-xs mr-1" data-testid="settings-muted-color-card">
+                <p class="text-xs text-muted mb-2">辅助说明颜色</p>
+                <div class="settings-option-grid grid grid-cols-3 gap-2">
+                  <button
+                    v-for="option in MUTED_COLOR_OPTIONS"
+                    :key="option.value"
+                    class="settings-color-option border rounded-xs flex flex-col items-center justify-center transition-colors"
+                    :class="settingsStore.mutedColor === option.value ? 'border-accent bg-accent/20' : 'border-accent/20 hover:border-accent/60'"
+                    :title="option.label"
+                    :data-testid="`settings-muted-color-${option.value}`"
+                    @click="settingsStore.changeMutedColor(option.value)"
+                  >
+                    <span
+                      class="settings-color-dot border border-accent/30 rounded-full"
+                      :style="{ backgroundColor: getMutedColorPreview(option.value, option.hex) }"
+                    />
+                    <span class="settings-option-label text-[10px] text-muted">{{ option.label }}</span>
+                  </button>
+                </div>
+                <div class="settings-color-custom-row mt-2">
+                  <label class="text-[10px] text-muted mb-1 block">自定义辅助色</label>
+                  <input
+                    v-model="mutedCustomInput"
+                    class="settings-color-input w-full px-2 py-1.5 bg-bg border rounded-xs text-xs text-text focus:border-accent outline-none placeholder:text-muted/40 transition-colors"
+                    :class="mutedCustomError ? 'border-danger' : 'border-accent/30'"
+                    placeholder="#6b7280"
+                    spellcheck="false"
+                    data-testid="settings-muted-color-custom-input"
+                    @input="applyMutedCustomColor"
+                    @change="applyMutedCustomColor"
+                  />
+                  <p v-if="mutedCustomError" class="text-[10px] text-danger mt-1">{{ mutedCustomError }}</p>
                 </div>
               </div>
 
@@ -414,7 +464,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, onBeforeUnmount, type Component } from 'vue'
+  import { ref, watch, onMounted, onBeforeUnmount, type Component } from 'vue'
   import {
     X,
     Pause,
@@ -446,10 +496,13 @@
   import { useGameLog } from '@/composables/useGameLog'
   import {
     FONT_COLOR_OPTIONS,
+    MUTED_COLOR_OPTIONS,
     FONT_WEIGHT_OPTIONS,
     MAX_FONT_SIZE,
     MIN_FONT_SIZE,
     useSettingsStore,
+    type FontColorKey,
+    type MutedColorKey,
     type QmsgPosition,
     type QmsgLimitWidthWrap
   } from '@/stores/useSettingsStore'
@@ -515,7 +568,13 @@
   } = useWebdav()
 
   const showSaveManager = ref(false)
+  const fontCustomInput = ref(settingsStore.fontCustomColor)
+  const mutedCustomInput = ref(settingsStore.mutedCustomColor)
+  const fontCustomError = ref('')
+  const mutedCustomError = ref('')
   let clipboard: ClipboardJS | null = null
+
+  const HEX_COLOR_INPUT_PATTERN = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/
 
   onMounted(() => {
     clipboard = new ClipboardJS('.webdav-log-copy', {
@@ -574,7 +633,37 @@
     settingsStore.syncQmsgConfig()
   }
 
-  const getFontColorPreview = (hex: string | null) => hex ?? getThemeByKey(settingsStore.theme).text
+  const isHexColorInput = (value: string) => HEX_COLOR_INPUT_PATTERN.test(value.trim())
+
+  const applyFontCustomColor = () => {
+    if (!isHexColorInput(fontCustomInput.value)) {
+      fontCustomError.value = '请输入 #RGB 或 #RRGGBB'
+      return
+    }
+    fontCustomError.value = settingsStore.changeFontCustomColor(fontCustomInput.value) ? '' : '请输入 #RGB 或 #RRGGBB'
+  }
+
+  const applyMutedCustomColor = () => {
+    if (!isHexColorInput(mutedCustomInput.value)) {
+      mutedCustomError.value = '请输入 #RGB 或 #RRGGBB'
+      return
+    }
+    mutedCustomError.value = settingsStore.changeMutedCustomColor(mutedCustomInput.value) ? '' : '请输入 #RGB 或 #RRGGBB'
+  }
+
+  watch(() => settingsStore.fontCustomColor, value => {
+    fontCustomInput.value = value
+  })
+
+  watch(() => settingsStore.mutedCustomColor, value => {
+    mutedCustomInput.value = value
+  })
+
+  const getFontColorPreview = (value: FontColorKey, hex: string | null) =>
+    value === 'custom' ? settingsStore.fontCustomColor : (hex ?? getThemeByKey(settingsStore.theme).text)
+
+  const getMutedColorPreview = (value: MutedColorKey, hex: string | null) =>
+    value === 'custom' ? settingsStore.mutedCustomColor : (hex ?? '#6b7280')
 </script>
 
 <style scoped>
