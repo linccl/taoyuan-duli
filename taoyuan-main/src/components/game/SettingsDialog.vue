@@ -162,46 +162,88 @@
 
           <!-- ===== 外观 ===== -->
           <template v-if="activeTab === 'display'">
-            <!-- 字体大小 -->
-            <div class="settings-dialog-card border border-accent/20 rounded-xs" data-testid="settings-font-size-card">
-              <p class="text-xs text-muted mb-2">字体大小</p>
-              <div class="settings-dialog-stepper flex items-center justify-center space-x-3">
-                <Button
-                  class="settings-stepper-btn py-1 px-3"
-                  :icon="Minus"
-                  :icon-size="12"
-                  :disabled="settingsStore.fontSize <= MIN_FONT_SIZE"
-                  data-testid="settings-font-size-decrease"
-                  @click="settingsStore.changeFontSize(-1)"
-                />
-                <span class="settings-stepper-value text-sm w-8 text-center" data-testid="settings-font-size-value">{{ settingsStore.fontSize }}</span>
-                <Button
-                  class="settings-stepper-btn py-1 px-3"
-                  :icon="Plus"
-                  :icon-size="12"
-                  :disabled="settingsStore.fontSize >= MAX_FONT_SIZE"
-                  data-testid="settings-font-size-increase"
-                  @click="settingsStore.changeFontSize(1)"
-                />
+            <div class="settings-dialog-scroll max-h-[40vh] overflow-y-auto flex flex-col space-y-3">
+              <!-- 字体大小 -->
+              <div class="settings-dialog-card border border-accent/20 rounded-xs mr-1" data-testid="settings-font-size-card">
+                <p class="text-xs text-muted mb-2">字体大小</p>
+                <div class="settings-dialog-stepper flex items-center justify-center space-x-3">
+                  <Button
+                    class="settings-stepper-btn py-1 px-3"
+                    :icon="Minus"
+                    :icon-size="12"
+                    :disabled="settingsStore.fontSize <= MIN_FONT_SIZE"
+                    data-testid="settings-font-size-decrease"
+                    @click="settingsStore.changeFontSize(-1)"
+                  />
+                  <span class="settings-stepper-value text-sm w-8 text-center" data-testid="settings-font-size-value">{{ settingsStore.fontSize }}</span>
+                  <Button
+                    class="settings-stepper-btn py-1 px-3"
+                    :icon="Plus"
+                    :icon-size="12"
+                    :disabled="settingsStore.fontSize >= MAX_FONT_SIZE"
+                    data-testid="settings-font-size-increase"
+                    @click="settingsStore.changeFontSize(1)"
+                  />
+                </div>
               </div>
-            </div>
 
-            <!-- 配色主题 -->
-            <div class="settings-dialog-card border border-accent/20 rounded-xs">
-              <p class="text-xs text-muted mb-2">配色主题</p>
-              <div class="flex items-center justify-center space-x-2">
-                <button
-                  v-for="t in THEMES"
-                  :key="t.key"
-                  class="settings-theme-swatch border rounded-xs flex items-center justify-center text-[10px] transition-colors"
-                  :class="settingsStore.theme === t.key ? 'border-accent' : 'border-accent/20'"
-                  :style="{ backgroundColor: t.bg, color: t.text }"
-                  :title="t.name"
-                  :data-testid="`settings-theme-${t.key}`"
-                  @click="settingsStore.changeTheme(t.key)"
-                >
-                  {{ t.name.charAt(0) }}
-                </button>
+              <!-- 字体颜色 -->
+              <div class="settings-dialog-card border border-accent/20 rounded-xs mr-1" data-testid="settings-font-color-card">
+                <p class="text-xs text-muted mb-2">字体颜色</p>
+                <div class="settings-option-grid grid grid-cols-5 gap-2">
+                  <button
+                    v-for="option in FONT_COLOR_OPTIONS"
+                    :key="option.value"
+                    class="settings-color-option border rounded-xs flex flex-col items-center justify-center transition-colors"
+                    :class="settingsStore.fontColor === option.value ? 'border-accent bg-accent/20' : 'border-accent/20 hover:border-accent/60'"
+                    :title="option.label"
+                    :data-testid="`settings-font-color-${option.value}`"
+                    @click="settingsStore.changeFontColor(option.value)"
+                  >
+                    <span
+                      class="settings-color-dot border border-accent/30 rounded-full"
+                      :style="{ backgroundColor: getFontColorPreview(option.hex) }"
+                    />
+                    <span class="settings-option-label text-[10px] text-muted">{{ option.label }}</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- 字体粗细 -->
+              <div class="settings-dialog-card border border-accent/20 rounded-xs mr-1" data-testid="settings-font-weight-card">
+                <p class="text-xs text-muted mb-2">字体粗细</p>
+                <div class="settings-option-grid grid grid-cols-4 gap-2">
+                  <button
+                    v-for="option in FONT_WEIGHT_OPTIONS"
+                    :key="option.value"
+                    class="settings-weight-option border rounded-xs text-xs transition-colors"
+                    :class="settingsStore.fontWeight === option.value ? 'border-accent bg-accent/20 text-accent' : 'border-accent/20 text-muted hover:text-text'"
+                    :style="{ fontWeight: option.value }"
+                    :data-testid="`settings-font-weight-${option.value}`"
+                    @click="settingsStore.changeFontWeight(option.value)"
+                  >
+                    {{ option.label }}
+                  </button>
+                </div>
+              </div>
+
+              <!-- 配色主题 -->
+              <div class="settings-dialog-card border border-accent/20 rounded-xs mr-1">
+                <p class="text-xs text-muted mb-2">配色主题</p>
+                <div class="flex items-center justify-center space-x-2">
+                  <button
+                    v-for="t in THEMES"
+                    :key="t.key"
+                    class="settings-theme-swatch border rounded-xs flex items-center justify-center text-[10px] transition-colors"
+                    :class="settingsStore.theme === t.key ? 'border-accent' : 'border-accent/20'"
+                    :style="{ backgroundColor: t.bg, color: t.text }"
+                    :title="t.name"
+                    :data-testid="`settings-theme-${t.key}`"
+                    @click="settingsStore.changeTheme(t.key)"
+                  >
+                    {{ t.name.charAt(0) }}
+                  </button>
+                </div>
               </div>
             </div>
           </template>
@@ -402,10 +444,18 @@
   import { useAudio } from '@/composables/useAudio'
   import { useGameClock } from '@/composables/useGameClock'
   import { useGameLog } from '@/composables/useGameLog'
-  import { MAX_FONT_SIZE, MIN_FONT_SIZE, useSettingsStore, type QmsgPosition, type QmsgLimitWidthWrap } from '@/stores/useSettingsStore'
+  import {
+    FONT_COLOR_OPTIONS,
+    FONT_WEIGHT_OPTIONS,
+    MAX_FONT_SIZE,
+    MIN_FONT_SIZE,
+    useSettingsStore,
+    type QmsgPosition,
+    type QmsgLimitWidthWrap
+  } from '@/stores/useSettingsStore'
   import { useTutorialStore } from '@/stores/useTutorialStore'
   import { useWebdav } from '@/composables/useWebdav'
-  import { THEMES } from '@/data/themes'
+  import { THEMES, getThemeByKey } from '@/data/themes'
   import SaveManager from '@/components/game/SaveManager.vue'
   import ClipboardJS from 'clipboard'
 
@@ -523,6 +573,8 @@
     settingsStore[key] = value
     settingsStore.syncQmsgConfig()
   }
+
+  const getFontColorPreview = (hex: string | null) => hex ?? getThemeByKey(settingsStore.theme).text
 </script>
 
 <style scoped>
@@ -565,6 +617,36 @@
   .settings-stepper-value {
     min-width: 44px;
     flex-shrink: 0;
+  }
+
+  .settings-option-grid {
+    min-width: 0;
+  }
+
+  .settings-color-option {
+    min-width: 0;
+    min-height: 50px;
+    padding: 6px 2px;
+    gap: 4px;
+  }
+
+  .settings-color-dot {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+  }
+
+  .settings-option-label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .settings-weight-option {
+    min-width: 0;
+    min-height: 40px;
+    padding: 0 4px;
   }
 
   .settings-theme-swatch {
