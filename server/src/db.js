@@ -162,6 +162,10 @@ function nowSeconds() {
   return Math.floor(Date.now() / 1000);
 }
 
+function todayBJ() {
+  return new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
 function normalizeAdminStatus(status) {
   const normalized = String(status || 'active').trim().toLowerCase();
   return ['active', 'banned', 'deleted'].includes(normalized) ? normalized : 'active';
@@ -176,6 +180,44 @@ function loadUserMetaStore() {
 
 function saveUserMetaStore(store) {
   writeJsonFileAtomic(USER_META_FILE, { users: store?.users || {} });
+}
+
+function loadUserActivityStore() {
+  const raw = readJsonStoreStrict(USER_ACTIVITY_FILE);
+  if (raw === null) return { users: {} };
+  if (!raw || !raw.users || typeof raw.users !== 'object') throw createStoreCorruptionError(USER_ACTIVITY_FILE);
+  return raw;
+}
+
+function saveUserActivityStore(store) {
+  writeJsonFileAtomic(USER_ACTIVITY_FILE, { users: store?.users || {} });
+}
+
+function normalizeUserActivityEntry(entry) {
+  const lastSeenAt = Number(entry?.last_seen_at) || 0;
+  const lastSeenDay = String(entry?.last_seen_day || '').trim();
+  return {
+    last_seen_at: lastSeenAt > 0 ? lastSeenAt : null,
+    last_seen_day: /^\d{4}-\d{2}-\d{2}$/.test(lastSeenDay) ? lastSeenDay : '',
+  };
+}
+
+function createEmptyActivityFields() {
+  return {
+    is_online: false,
+    today_active: false,
+    last_active_at: null,
+  };
+}
+
+function buildActivityFields(entry, now = nowSeconds(), day = todayBJ()) {
+  const normalized = normalizeUserActivityEntry(entry);
+  if (!normalized.last_seen_at) return createEmptyActivityFields();
+  return {
+    is_online: normalized.last_seen_at >= now - USER_ONLINE_WINDOW_SECONDS,
+    today_active: normalized.last_seen_day === day,
+    last_active_at: normalized.last_seen_at,
+  };
 }
 
 function getLocalUserMeta(usernameKey) {
