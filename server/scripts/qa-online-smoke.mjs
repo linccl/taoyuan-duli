@@ -678,6 +678,63 @@ try {
     assert(data?.ok === true && data?.isAdmin === true, 'admin me payload is incomplete')
   })
 
+  await runCheck('GET /api/admin/users rejects non-admin', async () => {
+    const { response, data } = await fetchJson('/api/admin/users')
+    assert(response.status === 403, `expected 403 from admin/users without admin token, received ${response.status}`)
+    assert(data?.ok === false, 'admin/users without admin token should return ok=false')
+  })
+
+  await runCheck('register inactive user without activity', async () => {
+    const uniqueSeed = Math.random().toString(36).slice(2, 8)
+    inactiveSessionState.username = `smk_inactive_${uniqueSeed}`
+    const { response, data } = await fetchSessionJson(inactiveSessionState, '/api/register', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        username: inactiveSessionState.username,
+        password: `SmokePass_${uniqueSeed}`,
+        display_name: `inactive${uniqueSeed}`,
+      }),
+    })
+    assert(response.ok, `inactive register returned ${response.status}: ${data?.msg || 'unknown error'}`)
+    assert(data?.ok === true, 'inactive register did not return ok=true')
+    inactiveSessionState.csrfToken = data.csrf_token
+  })
+
+  await runCheck('GET /api/admin/users activity fields', async () => {
+    await fetchAuthedJson('/api/me')
+    const { response, data } = await fetchAuthedJson(`/api/admin/users?keyword=${encodeURIComponent(sessionState.username)}&page=1&page_size=5`, {
+      headers: {
+        'X-Admin-Token': adminToken,
+      },
+    })
+    assert(response.ok, `admin/users activity read returned ${response.status}: ${data?.msg || 'unknown error'}`)
+    assert(data?.ok === true && Array.isArray(data?.users), 'admin/users activity payload is incomplete')
+    assert(Number.isInteger(data.online_count) && data.online_count >= 1, 'admin/users missing online_count')
+    assert(Number.isInteger(data.today_active_count) && data.today_active_count >= 1, 'admin/users missing today_active_count')
+    const currentUser = data.users.find(item => item?.username === sessionState.username)
+    assert(currentUser, 'admin/users did not return current user')
+    assert(currentUser.is_online === true, 'current user should be online')
+    assert(currentUser.today_active === true, 'current user should be today_active')
+    assert(Number(currentUser.last_active_at) > 0, 'current user missing last_active_at')
+  })
+
+  await runCheck('GET /api/admin/users old user without activity offline', async () => {
+    const { response, data } = await fetchAuthedJson(`/api/admin/users?keyword=${encodeURIComponent(inactiveSessionState.username)}&page=1&page_size=5`, {
+      headers: {
+        'X-Admin-Token': adminToken,
+      },
+    })
+    assert(response.ok, `admin/users inactive read returned ${response.status}: ${data?.msg || 'unknown error'}`)
+    const inactiveUser = data?.users?.find(item => item?.username === inactiveSessionState.username)
+    assert(inactiveUser, 'admin/users did not return inactive user')
+    assert(inactiveUser.is_online === false, 'inactive user should be offline')
+    assert(inactiveUser.today_active === false, 'inactive user should not be today_active')
+    assert(inactiveUser.last_active_at === null, 'inactive user should have null last_active_at')
+  })
+
   await runCheck('GET /api/admin/official-control/runtime-status optional path', async () => {
     if (!adminToken) return
     const { response, data } = await fetchAuthedJson('/api/admin/official-control/runtime-status', {
