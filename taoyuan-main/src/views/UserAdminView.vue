@@ -112,6 +112,8 @@
               <span class="admin-chip">用户总数：{{ totalUsers }}</span>
               <span class="admin-chip">当前页：{{ users.length }}</span>
               <span class="admin-chip">有存档：{{ usersWithSaveCount }}</span>
+              <span class="admin-chip" :title="activityUnavailable ? '活跃统计暂不可用，已显示为 0' : ''">当前在线：{{ onlineCount }}</span>
+              <span class="admin-chip" :title="activityUnavailable ? '活跃统计暂不可用，已显示为 0' : ''">今日活跃：{{ todayActiveCount }}</span>
               <button class="btn admin-filter-summary__action" @click="applyFilters">
                 <Search :size="14" />
                 <span>查询</span>
@@ -134,6 +136,7 @@
                 <div>用户</div>
                 <div>注册时间</div>
                 <div>状态</div>
+                <div>在线</div>
                 <div>额度</div>
                 <div>最近保存</div>
                 <div>存档概览</div>
@@ -163,6 +166,11 @@
 
                 <div class="admin-user-line admin-user-line--status" data-label="状态">
                   <span class="admin-status" :class="`admin-status--${user.status}`">{{ formatUserStatus(user.status) }}</span>
+                </div>
+
+                <div class="admin-user-line admin-user-line--activity" data-label="在线">
+                  <span class="admin-status" :class="user.is_online ? 'admin-status--online' : 'admin-status--offline'">{{ formatOnlineStatus(user.is_online) }}</span>
+                  <div class="admin-user-line__hint">{{ formatActivityHint(user) }}</div>
                 </div>
 
                 <div class="admin-user-line" data-label="额度">
@@ -456,6 +464,9 @@
 
   const users = ref<UserAdminSummary[]>([])
   const totalUsers = ref(0)
+  const onlineCount = ref(0)
+  const todayActiveCount = ref(0)
+  const activityUnavailable = ref(false)
   const loadingUsers = ref(false)
   const usersRequestId = ref(0)
 
@@ -541,6 +552,13 @@
     return mapping[status] || status
   }
 
+  const formatOnlineStatus = (isOnline: boolean) => isOnline ? '在线' : '离线'
+
+  const formatActivityHint = (user: UserAdminSummary) => {
+    if (user.last_active_at) return `最近活跃：${formatTime(user.last_active_at)}`
+    return user.today_active ? '今日活跃' : '今日未活跃'
+  }
+
   const formatRoleLabel = (role: string) => {
     return role === 'super_admin' ? '超级管理员' : role === 'admin' ? '普通管理员' : role
   }
@@ -584,6 +602,9 @@
     tokenError.value = message
     users.value = []
     totalUsers.value = 0
+    onlineCount.value = 0
+    todayActiveCount.value = 0
+    activityUnavailable.value = false
     selectedUsername.value = ''
     selectedUser.value = null
     auditLogs.value = []
@@ -687,6 +708,9 @@
       if (activeRequestId !== usersRequestId.value) return
       users.value = result.users
       totalUsers.value = result.total
+      onlineCount.value = result.online_count
+      todayActiveCount.value = result.today_active_count
+      activityUnavailable.value = result.activity_unavailable
       if (!keepSelection || !selectedUsername.value || !users.value.some(item => item.username === selectedUsername.value)) {
         selectedUsername.value = ''
       }
@@ -1053,17 +1077,18 @@
   .admin-user-table {
     display: grid;
     grid-template-columns:
-      minmax(180px, 1.3fr)
-      minmax(144px, 0.95fr)
-      minmax(88px, 0.6fr)
-      minmax(88px, 0.6fr)
-      minmax(150px, 0.95fr)
-      minmax(220px, 1.35fr)
+      minmax(180px, 1.2fr)
+      minmax(140px, 0.9fr)
+      minmax(82px, 0.5fr)
+      minmax(116px, 0.7fr)
+      minmax(80px, 0.5fr)
+      minmax(140px, 0.85fr)
+      minmax(200px, 1.15fr)
       minmax(220px, 1.3fr);
     gap: 12px;
     align-items: center;
     width: 100%;
-    min-width: 1180px;
+    min-width: 1240px;
   }
 
   .admin-user-table--head {
@@ -1111,6 +1136,10 @@
     justify-content: flex-end;
   }
 
+  .admin-user-line--activity .admin-user-line__hint {
+    margin-top: 5px;
+  }
+
   .admin-detail-modal-backdrop {
     position: fixed;
     inset: 0;
@@ -1146,12 +1175,13 @@
   @media (max-width: 1535px) {
     .admin-user-table {
       grid-template-columns:
-        minmax(170px, 1.2fr)
-        minmax(132px, 0.9fr)
-        minmax(82px, 0.55fr)
-        minmax(82px, 0.55fr)
-        minmax(130px, 0.85fr)
-        minmax(180px, 1.15fr)
+        minmax(170px, 1.15fr)
+        minmax(132px, 0.85fr)
+        minmax(76px, 0.5fr)
+        minmax(104px, 0.65fr)
+        minmax(76px, 0.5fr)
+        minmax(126px, 0.8fr)
+        minmax(176px, 1.05fr)
         minmax(200px, 1.15fr);
       gap: 10px;
     }
@@ -1317,6 +1347,18 @@
     color: #ff9f9f;
     background: rgba(184, 70, 70, 0.14);
     border-color: rgba(184, 70, 70, 0.3);
+  }
+
+  .admin-status--online {
+    color: #96deac;
+    background: rgba(72, 146, 95, 0.14);
+    border-color: rgba(72, 146, 95, 0.3);
+  }
+
+  .admin-status--offline {
+    color: rgb(var(--color-muted));
+    background: rgba(120, 120, 120, 0.1);
+    border-color: rgba(160, 160, 160, 0.18);
   }
 
   .admin-slot-card {
