@@ -12,6 +12,7 @@ const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const OAUTH_IDENTITIES_FILE = path.join(DATA_DIR, 'oauth_identities.json');
 const OAUTH_PENDING_PREFIX = 'oauth_identity_pending_';
 const USER_META_FILE = path.join(DATA_DIR, 'user_admin_meta.json');
+const USER_ACTIVITY_FILE = path.join(DATA_DIR, 'user_activity.json');
 const ADMIN_AUDIT_LOG_FILE = path.join(DATA_DIR, 'admin_audit_logs.json');
 const CONTENT_REVISION_LOG_FILE = path.join(DATA_DIR, 'admin_content_revisions.json');
 const GAMEPLAY_EVENT_LOG_FILE = path.join(DATA_DIR, 'taoyuan_gameplay_event_logs.json');
@@ -20,11 +21,14 @@ const DEFAULT_USER_QUOTA = parseInt(process.env.DEFAULT_USER_QUOTA || '2000000',
 
 const MYSQL_ENABLED = Boolean(process.env.MYSQL_HOST && process.env.MYSQL_USER && process.env.MYSQL_DATABASE);
 const MYSQL_PORT = parseInt(process.env.MYSQL_PORT || '3306', 10);
+const USER_ACTIVITY_THROTTLE_SECONDS = 60;
+const USER_ONLINE_WINDOW_SECONDS = 5 * 60;
 
 let mysqlPool = null;
 let mysqlReadyPromise = null;
 let lastMysqlFallbackLogAt = 0;
 const qaFailedOAuthIdentityWriteSubjects = new Set();
+const userActivityWriteCache = new Map();
 
 function logMysqlFallback(scope, error) {
   const now = Date.now();
